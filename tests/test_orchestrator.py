@@ -75,12 +75,21 @@ def test_pipeline_uses_profile_domains_and_preserves_payload_modes(
     assert read_domains(tmp_path / "domains.txt") == [
         "blocked.example", "outside.example", "shared.example",
     ]
+    # The enhanced list carries the discovered extras plus the pinned PPQ edge
+    # hosts, which Apple's host table never lists (see PPQ_EDGE_DOMAINS).
     assert read_domains(tmp_path / "enhanced/enhanced-domains.txt") == [
         "extra.example",
+        "ppq-ext.v.aaplimg.com",
+        "ppq-st-ext.itunes.apple.com",
+        "use1-ppq-ext-prod.apple.com",
+        "usw2-ppq-ext-prod.apple.com",
     ]
     enhanced = plistlib.loads((tmp_path / "enhanced/RevokeGuard_Enhanced.mobileconfig").read_bytes())
     assert enhanced["PayloadContent"][0]["DNSSettings"]["SupplementalMatchDomains"] == [
-        "blocked.example", "extra.example", "outside.example", "shared.example",
+        "blocked.example", "extra.example", "outside.example",
+        "ppq-ext.v.aaplimg.com", "ppq-st-ext.itunes.apple.com",
+        "shared.example", "use1-ppq-ext-prod.apple.com",
+        "usw2-ppq-ext-prod.apple.com",
     ]
     metadata = json.loads((tmp_path / "metadata.json").read_text(encoding="utf-8"))
     assert metadata["normal_discovery"]["blocked_by"]["shared.example"] == ["explicit", "multi"]

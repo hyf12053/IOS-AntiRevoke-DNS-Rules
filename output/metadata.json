@@ -1,6 +1,6 @@
 {
   "schema_version": 3,
-  "timestamp": "2026-10-05T02:47:37.376812Z",
+  "timestamp": "2026-10-05T12:13:56.729083Z",
   "apple_source": {
     "url": "https://support.apple.com/zh-cn/101555",
     "candidate_domains": 133
@@ -248,16 +248,9 @@
   },
   "reference_doh_url": "https://cloudflare-dns.com/dns-query",
   "normal_discovery": {
-    "target_domains": 33,
+    "target_domains": 20,
     "blocked_by": {
-      "appattest.apple.com": [
-        "applejr",
-        "sideloading"
-      ],
       "applejr.net": [
-        "applejr"
-      ],
-      "axm-app.apple.com": [
         "applejr"
       ],
       "certs.apple.com": [
@@ -266,12 +259,6 @@
         "sideloading"
       ],
       "certs.g.aaplimg.com": [
-        "applejr"
-      ],
-      "comm-cohort.ess.apple.com": [
-        "applejr"
-      ],
-      "comm-main.ess.apple.com": [
         "applejr"
       ],
       "crl.apple.com": [
@@ -288,17 +275,8 @@
       "crl4.digicert.com": [
         "khoindvn"
       ],
-      "gdmf.apple.com": [
-        "applejr"
-      ],
-      "guzzoni-apple-com.v.aaplimg.com": [
-        "applejr"
-      ],
       "khoindvn.com": [
         "khoindvn"
-      ],
-      "mesu.apple.com": [
-        "applejr"
       ],
       "ocsp-a.g.aaplimg.com": [
         "applejr"
@@ -331,31 +309,12 @@
       "ocsp4.apple.com": [
         "applejr"
       ],
-      "ppq-ext.v.aaplimg.com": [
-        "applejr"
-      ],
-      "ppq-st-ext.itunes.apple.com": [
-        "applejr"
-      ],
-      "ppq.apple.com": [
-        "applejr"
-      ],
-      "use1-ppq-ext-prod.apple.com": [
-        "applejr"
-      ],
-      "usw2-ppq-ext-prod.apple.com": [
-        "applejr"
-      ],
       "valid-apple.g.aaplimg.com": [
         "applejr"
       ],
       "valid.apple.com": [
         "applejr",
         "khoindvn",
-        "sideloading"
-      ],
-      "vpp.itunes.apple.com": [
-        "applejr",
         "sideloading"
       ],
       "vuvankhoi.com": [
@@ -393,9 +352,16 @@
   },
   "enhanced_discovery": {
     "endpoint_target_domains": 8,
-    "extra_domains": 0,
-    "extra_domain_list": [],
-    "merged_profile_domains": 33,
+    "extra_domains": 6,
+    "extra_domain_list": [
+      "ppq-ext.v.aaplimg.com",
+      "ppq-st-ext.itunes.apple.com",
+      "ppq.apple.com",
+      "use1-ppq-ext-prod.apple.com",
+      "usw2-ppq-ext-prod.apple.com",
+      "vpp.itunes.apple.com"
+    ],
+    "merged_profile_domains": 26,
     "blocked_by": {
       "appattest.apple.com": [
         "sideloading"
@@ -447,23 +413,23 @@
   },
   "generated_files": {
     "normal": {
-      "Quantumult X": "output/RevokeGuard_QuantumultX.txt",
-      "Surge": "output/RevokeGuard_Surge.txt",
-      "Loon": "output/RevokeGuard_Loon.txt",
-      "Shadowrocket": "output/RevokeGuard_Shadowrocket.txt",
-      "Hosts": "output/RevokeGuard_hosts.txt",
-      "Domain List": "output/domains.txt",
-      "iOS Profile": "output/RevokeGuard_Auto-Sync.mobileconfig"
+      "Quantumult X": "output\\RevokeGuard_QuantumultX.txt",
+      "Surge": "output\\RevokeGuard_Surge.txt",
+      "Loon": "output\\RevokeGuard_Loon.txt",
+      "Shadowrocket": "output\\RevokeGuard_Shadowrocket.txt",
+      "Hosts": "output\\RevokeGuard_hosts.txt",
+      "Domain List": "output\\domains.txt",
+      "iOS Profile": "output\\RevokeGuard_Auto-Sync.mobileconfig"
     },
     "enhanced": {
-      "Quantumult X": "output/enhanced/RevokeGuard_Enhanced_QuantumultX.txt",
-      "Surge": "output/enhanced/RevokeGuard_Enhanced_Surge.txt",
-      "Loon": "output/enhanced/RevokeGuard_Enhanced_Loon.txt",
-      "Shadowrocket": "output/enhanced/RevokeGuard_Enhanced_Shadowrocket.txt",
-      "Hosts": "output/enhanced/RevokeGuard_Enhanced_hosts.txt",
-      "Domain List": "output/enhanced/enhanced-domains.txt",
-      "iOS Profile": "output/enhanced/RevokeGuard_Enhanced.mobileconfig",
-      "Metadata": "output/enhanced/metadata.json"
+      "Quantumult X": "output\\enhanced\\RevokeGuard_Enhanced_QuantumultX.txt",
+      "Surge": "output\\enhanced\\RevokeGuard_Enhanced_Surge.txt",
+      "Loon": "output\\enhanced\\RevokeGuard_Enhanced_Loon.txt",
+      "Shadowrocket": "output\\enhanced\\RevokeGuard_Enhanced_Shadowrocket.txt",
+      "Hosts": "output\\enhanced\\RevokeGuard_Enhanced_hosts.txt",
+      "Domain List": "output\\enhanced\\enhanced-domains.txt",
+      "iOS Profile": "output\\enhanced\\RevokeGuard_Enhanced.mobileconfig",
+      "Metadata": "output\\enhanced\\metadata.json"
     }
   }
 }

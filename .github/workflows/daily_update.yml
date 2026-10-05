@@ -45,25 +45,42 @@ jobs:
         run: python -m pytest -q
 
       - name: Write and validate signing credentials
+        id: signing
         env:
           SSL_CERT: ${{ secrets.SSL_CERT }}
           SSL_KEY: ${{ secrets.SSL_KEY }}
         run: |
+          # Signing is optional. A fork normally has no SSL_CERT / SSL_KEY
+          # secrets, and an unsigned mobileconfig installs and works exactly
+          # like a signed one (iOS only shows an "Unsigned" label). When the
+          # secrets are absent we publish unsigned profiles instead of failing
+          # the whole run.
           if [ -z "$SSL_CERT" ] || [ -z "$SSL_KEY" ]; then
-            echo "SSL_CERT and SSL_KEY secrets are required" >&2
-            exit 1
+            echo "signing=false" >> "$GITHUB_OUTPUT"
+            echo "No signing credentials configured; will publish unsigned profiles."
+            exit 0
           fi
           printf '%s\n' "$SSL_CERT" > fullchain.pem
           printf '%s\n' "$SSL_KEY" > privkey.pem
           chmod 600 fullchain.pem privkey.pem
-          openssl x509 -in fullchain.pem -noout -subject
+          openssl x509 -in fullchain.pem -noout -subject -dates
           openssl pkey -in privkey.pem -check -noout
+          # Fail here rather than silently signing every daily build with a
+          # certificate that has already expired.
+          if ! openssl x509 -in fullchain.pem -noout -checkend 0; then
+            echo "Signing certificate is expired or not yet valid." >&2
+            exit 1
+          fi
+          echo "signing=true" >> "$GITHUB_OUTPUT"
 
       - name: Run discovery and generation pipeline
         env:
-          SSL_CERT_PATH: fullchain.pem
-          SSL_KEY_PATH: privkey.pem
+          SSL_CERT_PATH: ${{ steps.signing.outputs.signing == 'true' && 'fullchain.pem' || '' }}
+          SSL_KEY_PATH: ${{ steps.signing.outputs.signing == 'true' && 'privkey.pem' || '' }}
           DEBUG_MODE: ${{ inputs.debug || false }}
+          # Set a BACKEND_HOST repository variable to point the generated
+          # profiles at your own DoH resolver instead of upstream's.
+          BACKEND_HOST: ${{ vars.BACKEND_HOST }}
         run: |
           if [ "$DEBUG_MODE" = "true" ]; then
             python main.py --debug
@@ -89,16 +106,27 @@ jobs:
           test -s output/enhanced/RevokeGuard_Enhanced_hosts.txt
           test -s output/enhanced/enhanced-domains.txt
           test -s output/enhanced/metadata.json
-          openssl smime -verify \
-            -inform DER \
-            -in output/RevokeGuard_Auto-Sync.mobileconfig \
-            -noverify \
-            -out /dev/null
-          openssl smime -verify \
-            -inform DER \
-            -in output/enhanced/RevokeGuard_Enhanced.mobileconfig \
-            -noverify \
-            -out /dev/null
+          # Verify the signatures only when this run actually signed. The old
+          # step always asserted a CMS signature, which broke unsigned forks,
+          # and used -noverify (which skips the chain check, so an expired
+          # signing certificate passed unnoticed for months upstream).
+          if [ "${{ steps.signing.outputs.signing }}" = "true" ]; then
+            for profile in \
+              output/RevokeGuard_Auto-Sync.mobileconfig \
+              output/enhanced/RevokeGuard_Enhanced.mobileconfig
+            do
+              openssl smime -verify -inform DER -in "$profile" -noverify -out /dev/null
+              echo "signature present: $profile"
+            done
+          else
+            echo "Unsigned run; skipping CMS signature verification."
+          fi
+          # Guard the behaviour that actually broke app installation: the
+          # normal profile must keep the app-verification path reachable, the
+          # enhanced profile may block PPQ/VPP but never the appattest family,
+          # and enhanced must stay a superset of normal. See
+          # scripts/check_profile_contract.py for the exact rules.
+          python scripts/check_profile_contract.py
 
       - name: Remove signing credentials
         if: always()

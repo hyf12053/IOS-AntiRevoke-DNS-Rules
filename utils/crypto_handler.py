@@ -65,6 +65,62 @@ class CryptoHandler:
             logger.error("OpenSSL is not available or not installed")
             return False
 
+    def certificate_is_currently_valid(self, cert_path: str) -> bool:
+        """Return True when the certificate is valid at the current time.
+
+        Both bounds are checked. `openssl x509 -checkend` only covers expiry,
+        so a not-yet-valid certificate would slip through it; the validity
+        window is therefore parsed and compared against the current time.
+
+        Any failure to inspect the certificate is treated as invalid, so that
+        signing fails loudly instead of silently producing a stale signature.
+        """
+        try:
+            result = subprocess.run(
+                ['openssl', 'x509', '-in', cert_path, '-noout',
+                 '-startdate', '-enddate'],
+                capture_output=True, text=True,
+            )
+            if result.returncode != 0:
+                logger.error(
+                    "Could not read certificate dates: %s",
+                    (result.stderr or result.stdout).strip(),
+                )
+                return False
+
+            bounds = {}
+            for line in result.stdout.splitlines():
+                if '=' in line:
+                    key, _, value = line.partition('=')
+                    bounds[key.strip()] = value.strip()
+
+            fmt = '%b %d %H:%M:%S %Y %Z'
+            not_before = datetime.strptime(bounds['notBefore'], fmt).replace(
+                tzinfo=timezone.utc)
+            not_after = datetime.strptime(bounds['notAfter'], fmt).replace(
+                tzinfo=timezone.utc)
+            now = datetime.now(timezone.utc)
+        except Exception as exc:  # noqa: BLE001 - fail closed on any parse error
+            logger.error("Certificate validity check failed: %s", exc)
+            return False
+
+        if now < not_before:
+            logger.error(
+                "Signing certificate is not yet valid (notBefore=%s, now=%s)",
+                not_before.isoformat(), now.isoformat(),
+            )
+            return False
+        if now >= not_after:
+            logger.error(
+                "Signing certificate has expired (notAfter=%s, now=%s)",
+                not_after.isoformat(), now.isoformat(),
+            )
+            return False
+
+        logger.info(
+            "Signing certificate valid until %s", not_after.isoformat())
+        return True
+
     def decrypt_profile(self, input_file: str, output_file: str = None) -> Optional[str]:
         """
         Decrypt a CMS-signed .mobileconfig file (DER format) to extract raw plist.
@@ -363,12 +419,21 @@ class CryptoHandler:
             updated_value = updated_utc or datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')
             display_date = updated_value.split(' ')[0]
 
+            # Identifiers are derived from the profile name rather than from a
+            # fresh uuid4(). iOS keys configuration profiles by
+            # PayloadIdentifier: with a random identifier every daily rebuild
+            # installs as a NEW profile instead of replacing the previous one,
+            # so repeated installs pile up in Settings > VPN & Device
+            # Management > DNS. A stable identifier makes reinstalling an
+            # update. The RFC 4122 namespace keeps these values well-formed.
+            base_identifier = str(uuid.uuid5(uuid.NAMESPACE_URL, f'ios-antirevoke:{profile_name}'))
+
             # Create base mobileconfig structure
             profile = {
                 'PayloadVersion': 1,
                 'PayloadType': 'Configuration',
-                'PayloadIdentifier': f'com.revokeGuard.{uuid.uuid4()}',
-                'PayloadUUID': str(uuid.uuid4()),
+                'PayloadIdentifier': f'com.revokeGuard.{base_identifier}',
+                'PayloadUUID': base_identifier.upper(),
                 'PayloadDisplayName': f'{profile_name} {display_date}',
                 'PayloadDescription': (
                     f'Auto-generated on {updated_value}. '
@@ -384,12 +449,13 @@ class CryptoHandler:
                     {
                         'PayloadVersion': 1,
                         'PayloadType': 'com.apple.dnsSettings.managed',
-                        'PayloadIdentifier': f'com.revokeGuard.dns.{uuid.uuid4()}',
-                        'PayloadUUID': str(uuid.uuid4()),
+                        'PayloadIdentifier': f'com.revokeGuard.dns.{base_identifier}',
+                        'PayloadUUID': str(uuid.uuid5(uuid.NAMESPACE_URL,
+                                                     f'ios-antirevoke:dns:{profile_name}')).upper(),
                         'PayloadDisplayName': f'{profile_name} DNS Settings',
                         'DNSSettings': {
                             'DNSProtocol': 'HTTPS',
-                            'ServerURL': 'https://reject.rzmy.dpdns.org/dns-query',
+                            'ServerURL': f'https://{backend_host}/dns-query',
                             'SupplementalMatchDomains': sorted(list(set(domains)))
                         }
                     }
@@ -450,6 +516,21 @@ class CryptoHandler:
             else:
                 self.server_cert_path = server_cert
                 self.chain_cert_path = chain_cert
+
+            # Refuse to sign with a certificate that is not currently valid.
+            # iOS does not reject an expired signature at install time (the
+            # profile still works and only shows as Unverified), which is why
+            # this went unnoticed upstream for months while every daily build
+            # was signed with a certificate that had already expired. The
+            # workflow's `openssl smime -verify -noverify` gate cannot catch it
+            # either, because -noverify skips exactly this check.
+            if not self.certificate_is_currently_valid(server_cert):
+                logger.error(
+                    "Signing certificate is expired or not yet valid: %s. "
+                    "Refusing to sign; publish an unsigned profile or renew the "
+                    "certificate.", server_cert
+                )
+                return None
 
             # 构建 OpenSSL 签名命令
             cmd = [

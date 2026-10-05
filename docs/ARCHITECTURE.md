@@ -81,10 +81,22 @@ The enhanced endpoint is intentionally excluded from the normal endpoint union. 
 
 - Selects normal and enhanced payloads from the decoded profiles.
 - Runs normal and enhanced discovery independently.
-- Computes `enhanced extra = enhanced endpoint targets - normal targets`.
+- Filters the **normal** report first (`_filter_normal_report`), removing
+  install-verification domains so apps can be installed. Domains that are only
+  unsafe *while installing* are returned separately as deferred domains instead
+  of being discarded.
+- Computes `enhanced extra = enhanced endpoint targets - filtered normal targets`,
+  then re-adds the deferred domains so they reach the enhanced outputs.
 - Generates normal rules from normal targets.
 - Generates enhanced proxy rules from enhanced extras only.
 - Generates the enhanced iOS profile from `normal targets + enhanced extras`.
+
+Ordering matters here. Computing the enhanced extra set before filtering normal
+would leave a deferred domain absent from normal *and* absent from the enhanced
+outputs, silently removing it from the rule files as well. The filter therefore
+runs first, and `_filter_enhanced_sets` re-adds the deferred domains explicitly
+rather than relying on the enhanced endpoint to rediscover them (it usually
+returns only the canonical host and not the CNAME variants).
 
 ## Output contract
 
@@ -106,7 +118,13 @@ The enhanced endpoint is intentionally excluded from the normal endpoint union. 
 - Every DNS query must complete after retries.
 - Normal discovery and enhanced endpoint discovery must both produce targets.
 - All normal and enhanced artifacts must be generated.
-- GitHub Actions verifies both CMS signatures before committing.
+- No published profile may contain an install-verification domain
+  (`ppq.*`, `appattest.apple.com`, `vpp.itunes.apple.com`). The workflow decodes
+  each profile — signed or unsigned — and fails the run on a match.
+- Signing is refused when the certificate is expired or not yet valid.
+- GitHub Actions verifies the CMS signature only for runs that actually signed;
+  a fork without `SSL_CERT` / `SSL_KEY` publishes unsigned profiles instead of
+  failing.
 
 ## Metadata
 

@@ -10,7 +10,7 @@ import os
 import shutil
 import sys
 import tempfile
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
@@ -24,6 +24,60 @@ APPLE_SOURCE_URL = "https://support.apple.com/zh-cn/101555"
 REFERENCE_DOH_URL = "https://cloudflare-dns.com/dns-query"
 MIN_APPLE_CANDIDATES = 100
 MAX_TARGET_RATIO = 0.5
+
+# The DoH backend the generated profiles point at. Override with BACKEND_HOST
+# when self-hosting: upstream's server is a catch-all that answers NXDOMAIN for
+# every name, so it blocks exactly what is listed and nothing else.
+DEFAULT_BACKEND_HOST = "reject.rzmy.dpdns.org"
+
+# Domains that must never be blocked in ANY published profile, because iOS
+# contacts them while installing an app or on its first launch. The backend is
+# a catch-all black hole rather than a policy resolver with an allowlist, so an
+# entry here means "block it", which surfaces to the user as
+# "An Internet connection is required to verify...".
+ALWAYS_EXCLUDED_DOMAINS = frozenset({
+    # Apple's host table lists "*.appattest.apple.com" as "App validation" and
+    # "Managed device attestation". SupplementalMatchDomains is a suffix match,
+    # so listing the bare name also blocks the whole family - and the hosts that
+    # actually serve are register.* and data.*, while the bare name itself is
+    # NODATA. This single entry was enough to break installation for months.
+    "appattest.apple.com",
+    # Blocking these does not impede revocation checking, but breaks unrelated
+    # system services: software updates, Siri, communication registration.
+    "mesu.apple.com",
+    "gdmf.apple.com",
+    "guzzoni-apple-com.v.aaplimg.com",
+    "axm-app.apple.com",
+    "comm-main.ess.apple.com",
+    "comm-cohort.ess.apple.com",
+})
+
+# Domains that are safe to block only after an app has been installed.
+# PPQ is Apple's app/enterprise validation step: it must be reachable while
+# installing, and blocking it afterwards is the point of the enhanced profile.
+# vpp.itunes.apple.com ("Apps and Books" license operations) is where license
+# revocation happens, so it belongs in the same install-time-excluded group.
+INSTALL_TIME_EXCLUDED_DOMAINS = frozenset({
+    "ppq.apple.com",
+    "ppq-ext.v.aaplimg.com",
+    "ppq-st-ext.itunes.apple.com",
+    "use1-ppq-ext-prod.apple.com",
+    "usw2-ppq-ext-prod.apple.com",
+    "vpp.itunes.apple.com",
+})
+
+# PPQ edge hosts that Apple's public host table never lists. The table contains
+# only `ppq.apple.com`, so the discovery pipeline can only ever learn these from
+# an upstream profile's explicit list. They are pinned here so the enhanced
+# profile keeps the full PPQ family even if every upstream stops publishing it:
+# a candidate-pool-only pipeline silently loses them, and a partial PPQ block
+# leaves a fallback path open.
+PPQ_EDGE_DOMAINS = frozenset({
+    "ppq-ext.v.aaplimg.com",
+    "ppq-st-ext.itunes.apple.com",
+    "use1-ppq-ext-prod.apple.com",
+    "usw2-ppq-ext-prod.apple.com",
+})
 
 PROFILE_SOURCES = [
     {
@@ -63,9 +117,11 @@ class AntiRevokeOrchestrator:
         timeout: int = 30,
         workers: int = 20,
         reference_doh_url: str = REFERENCE_DOH_URL,
+        backend_host: str = DEFAULT_BACKEND_HOST,
     ):
         self.cert_path = cert_path
         self.key_path = key_path
+        self.backend_host = backend_host
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.enhanced_output_dir = self.output_dir / "enhanced"
@@ -165,6 +221,23 @@ class AntiRevokeOrchestrator:
             f"{len(enhanced_endpoint.domains)} explicit domains"
             if enhanced_endpoint.domains else enhanced_endpoint.url,
         )
+
+        # A source that discovers nothing is not fatal ("the forked repo has no
+        # domains today"), but it silently reduces coverage to whatever the
+        # remaining sources provide. Upstream once ran with AppleJr
+        # contributing zero domains for weeks without anyone noticing, so make
+        # the situation visible instead of inferring it from the domain count.
+        idle = [
+            name for name, detail in self.source_details.items()
+            if not detail["selected_endpoint"]["domains"]
+        ]
+        if idle:
+            logger.warning(
+                "Source(s) %s listed no explicit domains; their coverage "
+                "depends entirely on DNS probing (or is absent). The merged "
+                "list is only as good as the remaining sources.", idle
+            )
+
         return selected, enhanced_endpoint
 
     def generate_profile(
@@ -184,7 +257,7 @@ class AntiRevokeOrchestrator:
                 output_file=str(plist_path),
                 updated_utc=updated_utc,
                 domain_count=len(domains),
-                backend_host="reject.rzmy.dpdns.org",
+                backend_host=self.backend_host,
                 profile_name=profile_name,
             )
             if not created:
@@ -306,6 +379,93 @@ class AntiRevokeOrchestrator:
         merged = tuple(sorted(normal_set | set(enhanced_extra)))
         return enhanced_extra, merged
 
+    @staticmethod
+    def _filter_domains(
+        domains: Sequence[str],
+        excluded: frozenset,
+    ) -> Tuple[List[str], List[str]]:
+        """Split domains into (kept, excluded) using the given exclusion set."""
+        kept: List[str] = []
+        dropped: List[str] = []
+        for domain in domains:
+            normalized = domain.strip().lower().lstrip("*.")
+            if normalized in excluded:
+                dropped.append(domain)
+            else:
+                kept.append(domain)
+        return sorted(set(kept)), sorted(set(dropped))
+
+    def _filter_normal_report(
+        self,
+        normal_report: DomainDiscoveryReport,
+    ) -> Tuple[DomainDiscoveryReport, Tuple[str, ...]]:
+        """Strip install-verification domains from the install-time profile.
+
+        Returns the filtered report plus the domains that were *deferred*: those
+        are safe to block after installation and therefore belong in the
+        enhanced profile rather than being discarded.
+
+        blocked_by attribution is filtered alongside the target list so the
+        published metadata matches the published profile.
+        """
+        normal_excluded = ALWAYS_EXCLUDED_DOMAINS | INSTALL_TIME_EXCLUDED_DOMAINS
+        kept, dropped = self._filter_domains(
+            normal_report.target_domains, normal_excluded)
+
+        deferred = tuple(sorted(
+            d for d in dropped
+            if d.strip().lower().lstrip("*.") in INSTALL_TIME_EXCLUDED_DOMAINS
+        ))
+        always = [d for d in dropped if d not in deferred]
+        if deferred:
+            logger.info(
+                "Normal profile: deferred %d post-install domain(s) to the "
+                "enhanced profile: %s", len(deferred), list(deferred)
+            )
+        if always:
+            logger.warning(
+                "Excluded %d domain(s) that break app installation or "
+                "unrelated system services: %s", len(always), always
+            )
+
+        kept_set = set(kept)
+        filtered = replace(
+            normal_report,
+            target_domains=tuple(kept),
+            blocked_by={domain: sources
+                        for domain, sources in normal_report.blocked_by.items()
+                        if domain in kept_set},
+        )
+        return filtered, deferred
+
+    def _filter_enhanced_sets(
+        self,
+        enhanced_extra_domains: Sequence[str],
+        merged_enhanced_domains: Sequence[str],
+        normal_domains: Sequence[str],
+        deferred_domains: Sequence[str] = (),
+    ) -> Tuple[Tuple[str, ...], Tuple[str, ...]]:
+        """Apply the always-excluded set and keep enhanced a superset of normal.
+
+        Deferred domains are re-added here. They were withheld from the normal
+        profile only because they must stay reachable while installing; the
+        enhanced profile is exactly where they are supposed to end up. Relying
+        on the enhanced endpoint to rediscover them is not enough, because it
+        usually returns just the canonical host (ppq.apple.com) and not the
+        CNAME variants that upstream lists alongside it.
+        """
+        extra_kept, _ = self._filter_domains(
+            enhanced_extra_domains, ALWAYS_EXCLUDED_DOMAINS)
+        merged_kept, _ = self._filter_domains(
+            merged_enhanced_domains, ALWAYS_EXCLUDED_DOMAINS)
+
+        extra_set = set(extra_kept) | set(deferred_domains) | set(PPQ_EDGE_DOMAINS)
+        # The enhanced profile replaces the normal one on the device, so it must
+        # cover everything normal covered; otherwise switching profiles would
+        # silently drop protection.
+        merged_set = set(merged_kept) | set(normal_domains) | extra_set
+        return tuple(sorted(extra_set)), tuple(sorted(merged_set))
+
     def run(self, sources: Sequence[Dict[str, str]] = PROFILE_SOURCES) -> bool:
         try:
             logger.info("Starting DNS-based iOS Anti-Revoke discovery")
@@ -326,10 +486,26 @@ class AntiRevokeOrchestrator:
             self._validate_report("Normal", candidate_domains, normal_report)
             self._validate_report("Enhanced", candidate_domains, enhanced_report)
 
+            # Filter the install-time profile FIRST. The enhanced "extra" set is
+            # the enhanced endpoint's domains minus whatever normal ended up
+            # blocking, so deferring the filter until after this step would
+            # leave PPQ excluded from normal *and* absent from the enhanced
+            # rule files, i.e. lost entirely. Doing it in this order puts PPQ
+            # back where it belongs: enhanced-only.
+            normal_report, deferred_domains = self._filter_normal_report(normal_report)
+
             enhanced_extra_domains, merged_enhanced_domains = (
                 self.build_enhanced_domain_sets(
                     normal_report.target_domains,
                     enhanced_report.target_domains,
+                )
+            )
+            enhanced_extra_domains, merged_enhanced_domains = (
+                self._filter_enhanced_sets(
+                    enhanced_extra_domains,
+                    merged_enhanced_domains,
+                    normal_report.target_domains,
+                    deferred_domains,
                 )
             )
 
@@ -412,6 +588,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--timeout", type=int, default=30)
     parser.add_argument("--workers", type=int, default=20)
     parser.add_argument("--reference-doh-url", default=REFERENCE_DOH_URL)
+    parser.add_argument(
+        "--backend-host",
+        # `or` rather than getenv's default: GitHub Actions sets the variable to
+        # an empty string when the repository variable is unset, and an empty
+        # host would generate "https:///dns-query".
+        default=os.getenv("BACKEND_HOST") or DEFAULT_BACKEND_HOST,
+        help="DoH backend the generated profiles point at "
+             "(env: BACKEND_HOST, default: %(default)s)",
+    )
     parser.add_argument("--debug", action="store_true")
     return parser.parse_args()
 
@@ -428,6 +613,7 @@ def main() -> int:
         timeout=args.timeout,
         workers=args.workers,
         reference_doh_url=args.reference_doh_url,
+        backend_host=args.backend_host,
     )
     return 0 if orchestrator.run() else 1
 
