@@ -59,7 +59,7 @@
 		</dict>
 	</array>
 	<key>PayloadDescription</key>
-	<string>Auto-generated on 2026-10-05 12:13:56 UTC. Blocked Domains: 26. Backend: reject.rzmy.dpdns.org.</string>
+	<string>Auto-generated on 2026-10-05 12:52:07 UTC. Blocked Domains: 26. Backend: reject.rzmy.dpdns.org.</string>
 	<key>PayloadDisplayName</key>
 	<string>RevokeGuard Enhanced 2026-10-05</string>
 	<key>PayloadIdentifier</key>
