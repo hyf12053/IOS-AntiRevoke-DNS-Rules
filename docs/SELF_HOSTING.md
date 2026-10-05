@@ -33,10 +33,18 @@ valid TLS certificate, so you can skip the registrar entirely. Apple only
 requires that `ServerURL` uses `https://` and that the hostname matches the
 certificate; it never requires you to own the domain.
 
-| Route | Cost | Needs a domain? | Custom hostname |
-| --- | --- | --- | --- |
-| **A. workers.dev** (recommended) | free | no | `rg.<you>.workers.dev` |
-| **B. FreeDomain + Cloudflare** | free | yes, free | `reject.<you>.dpdns.org` |
+> **`workers.dev` is DNS-poisoned in mainland China.** Queries through Chinese
+> resolvers (AliDNS, DNSPod, 360) come back with unrelated addresses — Dropbox,
+> Yahoo and Facebook ranges — that differ on every lookup, so no client there
+> can reach a `*.workers.dev` host. This is specific to that suffix: `*.pages.dev`,
+> `*.r2.dev` and Cloudflare custom domains all resolve to genuine Cloudflare
+> addresses. **If the people downloading the profile are in mainland China, use
+> Route B.**
+
+| Route | Cost | Needs a domain? | Custom hostname | Mainland China |
+| --- | --- | --- | --- | --- |
+| A. workers.dev | free | no | `rg.<you>.workers.dev` | **blocked** (DNS poisoned) |
+| **B. FreeDomain + Cloudflare** (recommended) | free | yes, free | `reject.<you>.dpdns.org` | works |
 
 ---
 

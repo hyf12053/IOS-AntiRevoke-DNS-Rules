@@ -82,7 +82,7 @@ Use the normal configuration for installation and daily sideloading.
 
 | Platform / 平台 | File / 文件 |
 | --- | --- |
-| iOS/iPadOS | **[RevokeGuard.mobileconfig](https://rg.dns-moat.workers.dev/download)** |
+| iOS/iPadOS | **[RevokeGuard.mobileconfig](https://hyf.dpdns.org/download)** |
 | Quantumult X | [RevokeGuard_QuantumultX.txt](https://raw.githubusercontent.com/hyf12053/IOS-AntiRevoke-DNS-Rules/main/output/RevokeGuard_QuantumultX.txt) |
 | Surge | [RevokeGuard_Surge.txt](https://raw.githubusercontent.com/hyf12053/IOS-AntiRevoke-DNS-Rules/main/output/RevokeGuard_Surge.txt) |
 | Loon | [RevokeGuard_Loon.txt](https://raw.githubusercontent.com/hyf12053/IOS-AntiRevoke-DNS-Rules/main/output/RevokeGuard_Loon.txt) |
@@ -105,7 +105,7 @@ Use the normal configuration for installation and daily sideloading.
 
 | Platform / 平台 | File / 文件 |
 | --- | --- |
-| iOS/iPadOS | **[RevokeGuard_Enhanced.mobileconfig](https://rg.dns-moat.workers.dev/download2)** |
+| iOS/iPadOS | **[RevokeGuard_Enhanced.mobileconfig](https://hyf.dpdns.org/download2)** |
 | Quantumult X | [RevokeGuard_Enhanced_QuantumultX.txt](https://raw.githubusercontent.com/hyf12053/IOS-AntiRevoke-DNS-Rules/main/output/enhanced/RevokeGuard_Enhanced_QuantumultX.txt) |
 | Surge | [RevokeGuard_Enhanced_Surge.txt](https://raw.githubusercontent.com/hyf12053/IOS-AntiRevoke-DNS-Rules/main/output/enhanced/RevokeGuard_Enhanced_Surge.txt) |
 | Loon | [RevokeGuard_Enhanced_Loon.txt](https://raw.githubusercontent.com/hyf12053/IOS-AntiRevoke-DNS-Rules/main/output/enhanced/RevokeGuard_Enhanced_Loon.txt) |
@@ -219,8 +219,8 @@ The same Worker serves short download links for the profiles. The ones this
 repository uses:
 
 ```
-https://rg.dns-moat.workers.dev/download    → normal profile
-https://rg.dns-moat.workers.dev/download2   → enhanced profile
+https://hyf.dpdns.org/download    → normal profile
+https://hyf.dpdns.org/download2   → enhanced profile
 ```
 
 The names match upstream's `/download` and `/download2`. Beyond being shorter,
@@ -228,6 +228,15 @@ these send `Content-Type: application/x-apple-aspen-config`, which is the type
 iOS uses to recognise a configuration profile.
 `raw.githubusercontent.com` serves `.mobileconfig` as `text/plain` with
 `nosniff`, so it only works when the user taps the file directly.
+
+They are served from `hyf.dpdns.org` rather than the Worker's own
+`*.workers.dev` address because **`workers.dev` is DNS-poisoned in mainland
+China**: Chinese resolvers answer with unrelated addresses from Dropbox, Yahoo
+and Facebook ranges, so nothing there can reach it. The poisoning is specific to
+that suffix — Cloudflare custom domains resolve to genuine Cloudflare
+addresses, as do `*.pages.dev` and `*.r2.dev`. A custom domain also needs a
+valid certificate for its own hostname, which Cloudflare issues automatically
+when you attach it to the Worker.
 
 If a fetch from GitHub fails, these routes answer **502** rather than forwarding
 an error body. The profile is retrieved at request time, so upstream can return
