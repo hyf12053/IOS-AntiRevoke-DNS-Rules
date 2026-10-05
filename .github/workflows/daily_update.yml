@@ -151,6 +151,44 @@ jobs:
           git commit -m "chore: update iOS Anti-Revoke rules"
           git push
 
+      # This step exists because nothing else in the chain reports a problem.
+      # Cloudflare's Workers Free plan has no usage alert at all (the only
+      # threshold alert is pay-as-you-go only) and returns Error 1027 silently
+      # once the 100k/day limit is hit; Cloudflare's DNS alerts are Enterprise
+      # only; and DigitalPlat's terms reserve the right to suspend or retire a
+      # namespace "with or without prior notice" while capping liability at
+      # zero for free registrations. So a broken download link would otherwise
+      # be discovered only by tapping it.
+      #
+      # Running it after the commit is deliberate: a broken endpoint must not
+      # stop the day's rules from being published.
+      - name: Verify published endpoints
+        run: |
+          BASE="https://hyf.dpdns.org"
+          # iOS identifies a configuration profile by this exact type. A 200
+          # carrying text/plain or application/octet-stream means the profile
+          # will not install from a link, which is the failure this catches.
+          EXPECTED="application/x-apple-aspen-config"
+          failed=0
+          for path in download download2; do
+            url="$BASE/$path"
+            # `-w` already prints 000 when the transfer fails; `|| true` only
+            # stops `set -e` from aborting before we can say which URL broke.
+            code=$(curl -s -o /dev/null -L --max-time 30 -w '%{http_code}' "$url" 2>/dev/null || true)
+            type=$(curl -s -o /dev/null -L --max-time 30 -w '%{content_type}' "$url" 2>/dev/null || true)
+            code="${code:-000}"
+            if [ "$code" != "200" ]; then
+              echo "::error::$url returned HTTP $code"
+              failed=1
+            elif [ "${type%%;*}" != "$EXPECTED" ]; then
+              echo "::error::$url returned $type, expected $EXPECTED"
+              failed=1
+            else
+              echo "OK $url ($code, $type)"
+            fi
+          done
+          exit $failed
+
       - name: Upload generated artifacts
         if: success()
         uses: actions/upload-artifact@v4
