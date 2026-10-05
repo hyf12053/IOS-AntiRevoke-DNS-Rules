@@ -37,6 +37,10 @@ const RCODE_NXDOMAIN = 3;
 const PROFILE_ROUTES = {
   "/download": "output/RevokeGuard_Auto-Sync.mobileconfig",
   "/download2": "output/enhanced/RevokeGuard_Enhanced.mobileconfig",
+  // TEMPORARY. Serves the normal profile signed with a self-signed certificate,
+  // to find out what label iOS shows for a signature that cannot be chained to a
+  // trusted root. Remove this route and signing-test/ once recorded.
+  "/signed-test": "signing-test/RevokeGuard_SelfSigned.mobileconfig",
 };
 
 const DEFAULT_RAW_BASE =
