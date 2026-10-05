@@ -1,0 +1,16 @@
+{
+  "name": "antirevoke-doh",
+  "main": "src/index.js",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Anti-revoke DNS-over-HTTPS sinkhole for iOS configuration profiles",
+  "scripts": {
+    "test": "node --test test/index.test.js",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}

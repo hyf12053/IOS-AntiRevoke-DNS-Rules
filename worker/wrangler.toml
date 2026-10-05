@@ -1,0 +1,11 @@
+#:schema node_modules/wrangler/config-schema.json
+name = "antirevoke-doh"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+
+# The worker answers NXDOMAIN for everything except the optional allowlist.
+# No bindings, no storage: it is stateless by design, so there is nothing to
+# keep in sync with the profile besides the profile's own domain list.
+
+[observability]
+enabled = true

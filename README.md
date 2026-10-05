@@ -180,14 +180,31 @@ set, or if the enhanced profile stops being a superset of the normal one.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `BACKEND_HOST` | `reject.rzmy.dpdns.org` | DoH backend the profiles point at. Set a repository *variable* of the same name to self-host; an unset variable falls back to the default. |
+| `BACKEND_HOST` | `reject.rzmy.dpdns.org` | DoH backend the profiles point at. Accepts a bare host or a full `https://…` URL. Set a repository *variable* of the same name; an unset variable falls back to the default. |
 | `SSL_CERT_PATH` / `SSL_KEY_PATH` | _(empty)_ | PEM certificate chain and key used to CMS-sign the profiles. Omit both to publish unsigned profiles. |
 
-`BACKEND_HOST` also has a `--backend-host` CLI flag. Keep in mind what the
-default backend does: it answers `NXDOMAIN` for **every** name, so a listed
-domain is blocked unconditionally, and it has no allowlist. That is exactly why
-the exclusion lists above must be maintained in the generator rather than by
-adding "allow" entries to the profile.
+`BACKEND_HOST` also has a `--backend-host` CLI flag. A full URL is accepted
+because self-hosted resolvers are usually not at the root of a domain — a
+Cloudflare Worker lives at `https://<name>.<subdomain>.workers.dev`.
+
+Keep in mind what the default backend does: it answers `NXDOMAIN` for **every**
+name, so a listed domain is blocked unconditionally, and it has no allowlist.
+That is exactly why the exclusion lists above must be maintained in the
+generator rather than by adding "allow" entries to the profile.
+
+### Running your own backend | 自建后端
+
+The default backend is someone else's server on someone else's domain. This
+repository includes a Cloudflare Worker that replaces it, deployable for free
+without owning a domain:
+
+```bash
+cd worker && npm install && npx wrangler deploy
+```
+
+See [docs/SELF_HOSTING.md](docs/SELF_HOSTING.md) for the full walkthrough,
+including why the Worker answers NXDOMAIN for everything and when that is the
+wrong behaviour.
 
 ## Credits | 致谢
 

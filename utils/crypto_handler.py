@@ -386,6 +386,44 @@ class CryptoHandler:
         logger.info("Extracted %s DNS payloads from %s", len(unique), source)
         return unique
 
+    @staticmethod
+    def resolve_doh_url(backend_host: str) -> str:
+        """Return a full RFC 8484 DoH URL for a host or an already-complete URL.
+
+        Hosted resolvers rarely live at the root of a domain: a Cloudflare
+        Worker is served from `https://<name>.<subdomain>.workers.dev`, and the
+        path is configurable. Accepting only a bare hostname would force every
+        self-hoster to own a domain and add a DNS record, which is the main
+        reason this project depends on someone else's backend today.
+
+        The URL must use https:// (Apple requires it) and is the value the
+        system uses to validate the server certificate, so it has to match the
+        certificate the resolver presents.
+        """
+        value = (backend_host or '').strip()
+        if not value:
+            value = 'reject.rzmy.dpdns.org'
+
+        if '://' in value:
+            parsed = urlparse(value)
+            if parsed.scheme != 'https':
+                raise ValueError(
+                    f"DoH backend must use https://, got {parsed.scheme}://"
+                )
+            if not parsed.hostname:
+                raise ValueError(f"DoH backend URL has no hostname: {value}")
+            # Respect an explicit path; default to the RFC 8484 well-known one.
+            if parsed.path in ('', '/'):
+                return f'https://{parsed.netloc}/dns-query'
+            return value
+
+        # A bare host, optionally with a trailing slash or a path.
+        host, _, path = value.partition('/')
+        host = host.strip('/')
+        if not host:
+            raise ValueError(f"Invalid DoH backend: {backend_host}")
+        return f'https://{host}/{path or "dns-query"}'
+
     def create_profile(
         self,
         domains: List[str],
@@ -403,7 +441,9 @@ class CryptoHandler:
             output_file: Output file path (optional)
             updated_utc: Timestamp in UTC (YYYY-MM-DD HH:MM:SS UTC)
             domain_count: Total number of merged domains
-            backend_host: Backend host for description metadata
+            backend_host: DoH backend, either a bare host
+                (`dns.example.com`) or a full resolver URL
+                (`https://dns.example.com/dns-query`).
             profile_name: Display name prefix for the generated profile
 
         Returns:
@@ -455,7 +495,7 @@ class CryptoHandler:
                         'PayloadDisplayName': f'{profile_name} DNS Settings',
                         'DNSSettings': {
                             'DNSProtocol': 'HTTPS',
-                            'ServerURL': f'https://{backend_host}/dns-query',
+                            'ServerURL': self.resolve_doh_url(backend_host),
                             'SupplementalMatchDomains': sorted(list(set(domains)))
                         }
                     }

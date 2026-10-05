@@ -384,3 +384,55 @@ def test_ppq_edge_domains_survive_upstream_removal(tmp_path, monkeypatch):
     # ...and they must never leak into the install-time profile.
     normal = set(profile_domains(tmp_path / "RevokeGuard_Auto-Sync.mobileconfig"))
     assert not (normal & PPQ_EDGE_DOMAINS)
+
+
+# --------------------------------------------------------------------------
+# DoH backend URL handling.
+# --------------------------------------------------------------------------
+
+def test_bare_hostname_becomes_a_full_doh_url():
+    handler = CryptoHandler()
+    assert (handler.resolve_doh_url("dns.example.com")
+            == "https://dns.example.com/dns-query")
+    assert (handler.resolve_doh_url("dns.example.com/")
+            == "https://dns.example.com/dns-query")
+
+
+def test_a_complete_url_is_kept_because_workers_are_not_at_the_root():
+    """Self-hosted resolvers usually live on a path, not a bare domain."""
+    handler = CryptoHandler()
+    worker = "https://antirevoke-doh.someone.workers.dev"
+    assert handler.resolve_doh_url(worker) == f"{worker}/dns-query"
+    assert (handler.resolve_doh_url(f"{worker}/dns-query")
+            == f"{worker}/dns-query")
+    # An explicit non-default path must survive untouched.
+    assert (handler.resolve_doh_url("https://dns.nextdns.io/abc123")
+            == "https://dns.nextdns.io/abc123")
+
+
+def test_empty_backend_falls_back_to_the_default():
+    """GitHub Actions passes "" for an unset repository variable."""
+    handler = CryptoHandler()
+    for empty in ("", "   "):
+        assert (handler.resolve_doh_url(empty)
+                == "https://reject.rzmy.dpdns.org/dns-query")
+
+
+@pytest.mark.parametrize("insecure", [
+    "http://plain.example.com",
+    "ftp://files.example.com",
+    "https://",
+])
+def test_a_non_https_or_hostless_backend_is_rejected(insecure):
+    """Apple requires https, and the URL is what validates the certificate."""
+    with pytest.raises(ValueError):
+        CryptoHandler().resolve_doh_url(insecure)
+
+
+def test_resolved_url_reaches_the_generated_profile(tmp_path):
+    orchestrator = AntiRevokeOrchestrator(output_dir=str(tmp_path))
+    created = orchestrator.crypto.create_profile(
+        ["ocsp.apple.com"], output_file=str(tmp_path / "p.plist"),
+        backend_host="https://doh.myhost.workers.dev")
+    settings = plistlib.loads(open(created, "rb").read())["PayloadContent"][0]["DNSSettings"]
+    assert settings["ServerURL"] == "https://doh.myhost.workers.dev/dns-query"
