@@ -206,6 +206,18 @@ See [docs/SELF_HOSTING.md](docs/SELF_HOSTING.md) for the full walkthrough,
 including why the Worker answers NXDOMAIN for everything and when that is the
 wrong behaviour.
 
+The same Worker serves short download links for the profiles:
+
+```
+https://<your-worker>/download    → normal profile
+https://<your-worker>/download2   → enhanced profile
+```
+
+Beyond being shorter, these send `Content-Type: application/x-apple-aspen-config`,
+which is the type iOS uses to recognise a configuration profile.
+`raw.githubusercontent.com` serves `.mobileconfig` as `text/plain` with
+`nosniff`, so it only works when the user taps the file directly.
+
 ## Credits | 致谢
 
 - [Apple Support](https://support.apple.com/zh-cn/101555)

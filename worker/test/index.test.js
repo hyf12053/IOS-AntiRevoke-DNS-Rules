@@ -16,6 +16,7 @@ import test from "node:test";
 import worker, {
   buildNxDomain,
   isAllowed,
+  looksLikeProfile,
   parseAllowlist,
   parseQuestion,
 } from "../src/index.js";
@@ -335,4 +336,155 @@ test("a name outside the allowlist is still blocked", async (t) => {
   assert.equal(called, false, "must not consult upstream for a blocked name");
   const body = new Uint8Array(await response.arrayBuffer());
   assert.equal(body[3] & 0x0f, 3);
+});
+
+// ---------------------------------------------------------------------------
+// Profile download routes (/download, /download2)
+//
+// These exist because raw.githubusercontent.com serves .mobileconfig as
+// text/plain with nosniff, not as application/x-apple-aspen-config. The
+// validation matters more than the short URL: the profile is fetched from a
+// third party at request time, so a failure could hand iOS an error page.
+// ---------------------------------------------------------------------------
+
+/** A minimal but structurally valid unsigned profile. */
+function fakeProfile(pad = 400) {
+  const xml =
+    '<?xml version="1.0" encoding="UTF-8"?>\n' +
+    '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" ' +
+    '"http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n' +
+    '<plist version="1.0"><dict>' +
+    "<key>PayloadType</key><string>com.apple.dnsSettings.managed</string>" +
+    `<key>Pad</key><string>${"x".repeat(pad)}</string>` +
+    "</dict></plist>\n";
+  return new TextEncoder().encode(xml);
+}
+
+function withFetch(handler, fn) {
+  const original = globalThis.fetch;
+  globalThis.fetch = handler;
+  return fn().finally(() => { globalThis.fetch = original; });
+}
+
+test("looksLikeProfile accepts an unsigned XML profile", () => {
+  assert.equal(looksLikeProfile(fakeProfile()), true);
+});
+
+test("looksLikeProfile accepts a CMS-signed profile", () => {
+  // DER always begins with a SEQUENCE tag.
+  const bytes = new Uint8Array(600);
+  bytes[0] = 0x30;
+  bytes[1] = 0x82;
+  bytes.set(new TextEncoder().encode("com.apple.dnsSettings.managed"), 200);
+  assert.equal(looksLikeProfile(bytes), true);
+});
+
+test("looksLikeProfile rejects a 404 body", () => {
+  assert.equal(looksLikeProfile(new TextEncoder().encode("404: Not Found")), false);
+});
+
+test("looksLikeProfile rejects an HTML error page", () => {
+  const html = `<!DOCTYPE html><html><body>${"y".repeat(500)}</body></html>`;
+  assert.equal(looksLikeProfile(new TextEncoder().encode(html)), false);
+});
+
+test("looksLikeProfile rejects an empty or tiny body", () => {
+  assert.equal(looksLikeProfile(new Uint8Array(0)), false);
+  assert.equal(looksLikeProfile(new Uint8Array(10)), false);
+});
+
+test("/download serves the profile with the Apple content type", async () => {
+  await withFetch(
+    async () => new Response(fakeProfile(), { status: 200 }),
+    async () => {
+      const res = await worker.fetch(requestFor("https://doh.example/download"), {});
+      assert.equal(res.status, 200);
+      // The whole point of the route: iOS needs this exact type.
+      assert.equal(res.headers.get("content-type"), "application/x-apple-aspen-config");
+      assert.match(res.headers.get("content-disposition"), /RevokeGuard\.mobileconfig/);
+      // Must be a valid profile, not an error page.
+      const body = new Uint8Array(await res.arrayBuffer());
+      assert.equal(looksLikeProfile(body), true);
+    },
+  );
+});
+
+test("/download2 serves the enhanced profile with its own filename", async () => {
+  await withFetch(
+    async () => new Response(fakeProfile(), { status: 200 }),
+    async () => {
+      const res = await worker.fetch(requestFor("https://doh.example/download2"), {});
+      assert.equal(res.status, 200);
+      assert.equal(res.headers.get("content-type"), "application/x-apple-aspen-config");
+      assert.match(res.headers.get("content-disposition"), /Enhanced/);
+    },
+  );
+});
+
+test("a missing upstream file becomes 502, never a broken profile", async () => {
+  // This is the failure that matters: GitHub answers 404 with a short text
+  // body. Forwarding that as a profile would install nothing useful on the
+  // device while looking like a successful download.
+  await withFetch(
+    async () => new Response(fakeProfile(), { status: 404 }),
+    async () => {
+      const res = await worker.fetch(requestFor("https://doh.example/download"), {});
+      assert.equal(res.status, 502, "404 with a valid-looking body must still be 502");
+    },
+  );
+});
+
+test("an upstream 200 carrying an HTML page is rejected", async () => {
+  await withFetch(
+    async () => new Response(`<html>${"z".repeat(500)}</html>`, { status: 200 }),
+    async () => {
+      const res = await worker.fetch(requestFor("https://doh.example/download"), {});
+      assert.equal(res.status, 502);
+    },
+  );
+});
+
+test("a truncated body is rejected", async () => {
+  await withFetch(
+    async () => new Response(new TextEncoder().encode("<?xml"), { status: 200 }),
+    async () => {
+      const res = await worker.fetch(requestFor("https://doh.example/download"), {});
+      assert.equal(res.status, 502);
+    },
+  );
+});
+
+test("a network failure becomes 502, not an unhandled rejection", async () => {
+  await withFetch(
+    async () => { throw new Error("connection reset"); },
+    async () => {
+      const res = await worker.fetch(requestFor("https://doh.example/download"), {});
+      assert.equal(res.status, 502);
+    },
+  );
+});
+
+test("the raw base is configurable for other forks", async () => {
+  let requested = null;
+  await withFetch(
+    async (url) => { requested = String(url); return new Response(fakeProfile()); },
+    async () => {
+      await worker.fetch(requestFor("https://doh.example/download"),
+        { RAW_BASE: "https://raw.example/other/repo/main" });
+    },
+  );
+  assert.match(requested, /^https:\/\/raw\.example\/other\/repo\/main\/output\//);
+});
+
+test("the two routes request different repository paths", async () => {
+  const seen = [];
+  await withFetch(
+    async (url) => { seen.push(String(url)); return new Response(fakeProfile()); },
+    async () => {
+      await worker.fetch(requestFor("https://doh.example/download"), {});
+      await worker.fetch(requestFor("https://doh.example/download2"), {});
+    },
+  );
+  assert.match(seen[0], /output\/RevokeGuard_Auto-Sync\.mobileconfig$/);
+  assert.match(seen[1], /output\/enhanced\/RevokeGuard_Enhanced\.mobileconfig$/);
 });

@@ -98,6 +98,46 @@ Re-generating the profile is not enough on its own: the device keeps using the
 installed profile until you install the new one. Install it, then **remove the
 old profile** — otherwise two DNS payloads with different servers coexist.
 
+### 6. Short download links (optional, recommended)
+
+The Worker also serves the two profiles, so you can hand out short links
+instead of the long `raw.githubusercontent.com` paths:
+
+| Link | Serves |
+| --- | --- |
+| `https://antirevoke-doh.yourname.workers.dev/download` | normal profile |
+| `https://antirevoke-doh.yourname.workers.dev/download2` | enhanced profile |
+
+The names match upstream's `/download` and `/download2`, so existing
+instructions keep working.
+
+This is not only cosmetic. `raw.githubusercontent.com` serves `.mobileconfig`
+as `Content-Type: text/plain` together with
+`X-Content-Type-Options: nosniff`, which forbids the system from sniffing the
+real type. Safari tolerates that when the user taps the file directly, but iOS
+identifies a configuration profile by
+`Content-Type: application/x-apple-aspen-config`, and other entry points (an
+in-app link, a redirect, a QR scan) may refuse a `text/plain` response. These
+routes send the correct type.
+
+Verify both:
+
+```bash
+curl -sI "https://antirevoke-doh.yourname.workers.dev/download" | grep -i content-type
+# content-type: application/x-apple-aspen-config
+```
+
+**Failure behaviour is deliberate.** The profile is fetched from GitHub at
+request time, so a bad day upstream could return an HTML error page or a
+truncated body with HTTP 200. Forwarding that would make the device install a
+broken profile while looking like a successful download. Instead the Worker
+validates the body (DER `0x30` for signed profiles, `<?xml` for unsigned ones,
+no HTML, minimum length) and answers **502** if it does not look like a
+profile. A 502 is visible and diagnosable; a silently broken profile is not.
+
+Change `RAW_BASE` in `wrangler.toml` if you serve the files from a different
+repository or branch.
+
 ---
 
 ## Route B — FreeDomain name in front of the Worker

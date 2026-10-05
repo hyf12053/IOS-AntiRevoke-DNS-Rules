@@ -3,9 +3,18 @@ name = "antirevoke-doh"
 main = "src/index.js"
 compatibility_date = "2026-10-01"
 
-# The worker answers NXDOMAIN for everything except the optional allowlist.
-# No bindings, no storage: it is stateless by design, so there is nothing to
+# The worker answers NXDOMAIN for everything except the optional allowlist, and
+# serves the two profiles at /download and /download2.
+#
+# No bindings and no storage: it is stateless by design, so there is nothing to
 # keep in sync with the profile besides the profile's own domain list.
+
+[vars]
+# Where the profiles are fetched from. Change these for your own fork.
+RAW_BASE = "https://raw.githubusercontent.com/hyf12053/IOS-AntiRevoke-DNS-Rules/main"
+# Optional. Comma-separated names that must resolve instead of being blocked,
+# e.g. "register.appattest.apple.com". An entry also covers its subdomains.
+# ALLOWLIST = ""
 
 [observability]
 enabled = true
