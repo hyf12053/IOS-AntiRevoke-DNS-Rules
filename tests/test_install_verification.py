@@ -439,7 +439,7 @@ def test_bare_hostname_becomes_a_full_doh_url():
 def test_a_complete_url_is_kept_because_workers_are_not_at_the_root():
     """Self-hosted resolvers usually live on a path, not a bare domain."""
     handler = CryptoHandler()
-    worker = "https://antirevoke-doh.someone.workers.dev"
+    worker = "https://my-worker.someone.workers.dev"
     assert handler.resolve_doh_url(worker) == f"{worker}/dns-query"
     assert (handler.resolve_doh_url(f"{worker}/dns-query")
             == f"{worker}/dns-query")

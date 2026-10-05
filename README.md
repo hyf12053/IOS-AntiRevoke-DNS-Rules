@@ -82,7 +82,7 @@ Use the normal configuration for installation and daily sideloading.
 
 | Platform / 平台 | File / 文件 |
 | --- | --- |
-| iOS/iPadOS | **[RevokeGuard.mobileconfig](https://antirevoke-doh.dns-moat.workers.dev/download)** |
+| iOS/iPadOS | **[RevokeGuard.mobileconfig](https://rg.dns-moat.workers.dev/download)** |
 | Quantumult X | [RevokeGuard_QuantumultX.txt](https://raw.githubusercontent.com/hyf12053/IOS-AntiRevoke-DNS-Rules/main/output/RevokeGuard_QuantumultX.txt) |
 | Surge | [RevokeGuard_Surge.txt](https://raw.githubusercontent.com/hyf12053/IOS-AntiRevoke-DNS-Rules/main/output/RevokeGuard_Surge.txt) |
 | Loon | [RevokeGuard_Loon.txt](https://raw.githubusercontent.com/hyf12053/IOS-AntiRevoke-DNS-Rules/main/output/RevokeGuard_Loon.txt) |
@@ -105,7 +105,7 @@ Use the normal configuration for installation and daily sideloading.
 
 | Platform / 平台 | File / 文件 |
 | --- | --- |
-| iOS/iPadOS | **[RevokeGuard_Enhanced.mobileconfig](https://antirevoke-doh.dns-moat.workers.dev/download2)** |
+| iOS/iPadOS | **[RevokeGuard_Enhanced.mobileconfig](https://rg.dns-moat.workers.dev/download2)** |
 | Quantumult X | [RevokeGuard_Enhanced_QuantumultX.txt](https://raw.githubusercontent.com/hyf12053/IOS-AntiRevoke-DNS-Rules/main/output/enhanced/RevokeGuard_Enhanced_QuantumultX.txt) |
 | Surge | [RevokeGuard_Enhanced_Surge.txt](https://raw.githubusercontent.com/hyf12053/IOS-AntiRevoke-DNS-Rules/main/output/enhanced/RevokeGuard_Enhanced_Surge.txt) |
 | Loon | [RevokeGuard_Enhanced_Loon.txt](https://raw.githubusercontent.com/hyf12053/IOS-AntiRevoke-DNS-Rules/main/output/enhanced/RevokeGuard_Enhanced_Loon.txt) |
@@ -219,8 +219,8 @@ The same Worker serves short download links for the profiles. The ones this
 repository uses:
 
 ```
-https://antirevoke-doh.dns-moat.workers.dev/download    → normal profile
-https://antirevoke-doh.dns-moat.workers.dev/download2   → enhanced profile
+https://rg.dns-moat.workers.dev/download    → normal profile
+https://rg.dns-moat.workers.dev/download2   → enhanced profile
 ```
 
 The names match upstream's `/download` and `/download2`. Beyond being shorter,

@@ -35,7 +35,7 @@ certificate; it never requires you to own the domain.
 
 | Route | Cost | Needs a domain? | Custom hostname |
 | --- | --- | --- | --- |
-| **A. workers.dev** (recommended) | free | no | `antirevoke-doh.<you>.workers.dev` |
+| **A. workers.dev** (recommended) | free | no | `rg.<you>.workers.dev` |
 | **B. FreeDomain + Cloudflare** | free | yes, free | `reject.<you>.dpdns.org` |
 
 ---
@@ -64,10 +64,10 @@ globally installed Wrangler bundles it on its own. (Wrangler may warn that
 not affect bundling.)
 
 Wrangler prints the deployed URL, e.g.
-`https://antirevoke-doh.yourname.workers.dev`. Verify it:
+`https://rg.yourname.workers.dev`. Verify it:
 
 ```bash
-curl "https://antirevoke-doh.yourname.workers.dev/health"
+curl "https://rg.yourname.workers.dev/health"
 # {"status":"ok","role":"anti-revoke DoH sinkhole","allowlist":[]}
 ```
 
@@ -76,7 +76,7 @@ curl "https://antirevoke-doh.yourname.workers.dev/health"
 ```bash
 # Expect NXDOMAIN, which curl reports as "Non-existent domain"
 curl -H 'accept: application/dns-message' \
-  "https://antirevoke-doh.yourname.workers.dev/dns-query?dns=$(printf '\xab\xcd\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00\x03ppq\x05apple\x03com\x00\x00\x01\x00\x01' | base64 -w0 | tr '+/' '-_' | tr -d '=')"
+  "https://rg.yourname.workers.dev/dns-query?dns=$(printf '\xab\xcd\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00\x03ppq\x05apple\x03com\x00\x00\x01\x00\x01' | base64 -w0 | tr '+/' '-_' | tr -d '=')"
 ```
 
 ### 4. Point the profiles at it
@@ -86,7 +86,7 @@ Set the URL as a **repository variable** named `BACKEND_HOST`
 variable). The value is the full Worker URL:
 
 ```
-https://antirevoke-doh.yourname.workers.dev
+https://rg.yourname.workers.dev
 ```
 
 A full URL is accepted, not just a bare hostname, precisely because Workers are
@@ -109,8 +109,8 @@ instead of the long `raw.githubusercontent.com` paths:
 
 | Link | Serves |
 | --- | --- |
-| `https://antirevoke-doh.yourname.workers.dev/download` | normal profile |
-| `https://antirevoke-doh.yourname.workers.dev/download2` | enhanced profile |
+| `https://rg.yourname.workers.dev/download` | normal profile |
+| `https://rg.yourname.workers.dev/download2` | enhanced profile |
 
 The names match upstream's `/download` and `/download2`, so existing
 instructions keep working.
@@ -127,7 +127,7 @@ routes send the correct type.
 Verify both:
 
 ```bash
-curl -sI "https://antirevoke-doh.yourname.workers.dev/download" | grep -i content-type
+curl -sI "https://rg.yourname.workers.dev/download" | grep -i content-type
 # content-type: application/x-apple-aspen-config
 ```
 

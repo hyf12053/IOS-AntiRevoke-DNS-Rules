@@ -198,7 +198,7 @@ async function serveProfile(pathname, env) {
   let upstream;
   try {
     upstream = await fetch(url, {
-      headers: { "user-agent": "antirevoke-doh" },
+      headers: { "user-agent": "rg" },
       cf: { cacheTtl: 300, cacheEverything: true },
     });
   } catch (error) {

@@ -1,5 +1,5 @@
 {
-  "name": "antirevoke-doh",
+  "name": "rg",
   "main": "src/index.js",
   "version": "1.0.0",
   "private": true,
