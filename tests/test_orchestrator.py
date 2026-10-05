@@ -41,7 +41,9 @@ def test_pipeline_uses_profile_domains_and_preserves_payload_modes(
     candidates = ["shared.example", "blocked.example", "extra.example"] + [
         f"clean{i}.example" for i in range(100)
     ]
-    orchestrator = AntiRevokeOrchestrator(output_dir=str(tmp_path))
+    # Synthetic fixture with a few domains, so the production floor is lowered.
+    orchestrator = AntiRevokeOrchestrator(output_dir=str(tmp_path),
+                                          min_target_domains=1)
     monkeypatch.setattr(orchestrator.scraper, "fetch_apple_domains", lambda _: candidates)
     monkeypatch.setattr(orchestrator.scraper, "scrape_sources", lambda _: profiles)
     orchestrator.scraper.download_urls = {s["name"]: s["url"] for s in sources}

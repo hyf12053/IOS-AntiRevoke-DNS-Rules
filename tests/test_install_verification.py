@@ -12,13 +12,16 @@ app was installed.
 These tests pin the behaviour that must not regress.
 """
 
+import json
 import plistlib
+from pathlib import Path
 
 import pytest
 
 from main import (
     ALWAYS_EXCLUDED_DOMAINS,
     INSTALL_TIME_EXCLUDED_DOMAINS,
+    MIN_TARGET_DOMAINS,
     AntiRevokeOrchestrator,
 )
 from utils.crypto_handler import CryptoHandler
@@ -52,7 +55,11 @@ def build_orchestrator(tmp_path, monkeypatch, normal_domains, enhanced_domains):
     candidates = sorted(set(normal_domains) | set(enhanced_domains)) + [
         f"clean{i}.example" for i in range(100)
     ]
-    orchestrator = AntiRevokeOrchestrator(output_dir=str(tmp_path))
+    # These fixtures deliberately use a handful of synthetic domains, so the
+    # production floor (which exists to catch silent list collapse) is lowered.
+    orchestrator = AntiRevokeOrchestrator(output_dir=str(tmp_path),
+                                          min_target_domains=1)
+
     monkeypatch.setattr(orchestrator.scraper, "fetch_apple_domains", lambda _: candidates)
     monkeypatch.setattr(orchestrator.scraper, "scrape_sources", lambda _: profiles)
     orchestrator.scraper.download_urls = {s["name"]: s["url"] for s in sources}
@@ -125,10 +132,41 @@ def test_enhanced_profile_still_never_blocks_always_excluded(tmp_path, monkeypat
         assert "appattest.apple.com" not in domains, f"{name} blocks appattest"
 
 
+def test_the_two_exclusion_groups_do_not_overlap():
+    """A domain in both groups would be excluded *and* deferred.
+
+    Overlap is not merely redundant: ``_filter_normal_report`` classifies a
+    dropped domain as deferred when it is in INSTALL_TIME_EXCLUDED_DOMAINS, so an
+    overlapping entry would be silently promoted into the enhanced profile --
+    the opposite of the "always excluded" intent.
+    """
+    assert not (ALWAYS_EXCLUDED_DOMAINS & INSTALL_TIME_EXCLUDED_DOMAINS)
+
+
 @pytest.mark.parametrize("domain", sorted(ALWAYS_EXCLUDED_DOMAINS))
-def test_always_excluded_covers_install_and_unrelated_service_domains(domain):
-    """Every always-excluded entry has a documented reason to be here."""
-    assert domain in ALWAYS_EXCLUDED_DOMAINS
+def test_every_always_excluded_entry_has_a_reason(domain):
+    """Each entry must be justified by a recognised reason, not merely present.
+
+    The previous version asserted membership in the very set it parametrised
+    over, so it could not fail no matter what the code did.
+    """
+    suffix_trap = "suffix trap: bare name covers the serving register./data. hosts"
+    documented = {
+        "appattest.apple.com": suffix_trap,
+        "mesu.apple.com": "unrelated Apple service: software update",
+        "gdmf.apple.com": "unrelated Apple service: update catalogue",
+        "guzzoni-apple-com.v.aaplimg.com": "unrelated Apple service: Siri",
+        "comm-main.ess.apple.com":
+            "unrelated Apple service: SOS/communication registration",
+        "comm-cohort.ess.apple.com":
+            "unrelated Apple service: SOS/communication registration",
+        "axm-app.apple.com":
+            "unrelated Apple service: managed device attestation",
+    }
+    assert domain in documented, (
+        f"{domain} is excluded without a documented reason; justify it before "
+        f"adding it to ALWAYS_EXCLUDED_DOMAINS"
+    )
 
 
 def test_filter_matches_subdomains_and_star_prefixes():
@@ -436,3 +474,145 @@ def test_resolved_url_reaches_the_generated_profile(tmp_path):
         backend_host="https://doh.myhost.workers.dev")
     settings = plistlib.loads(open(created, "rb").read())["PayloadContent"][0]["DNSSettings"]
     assert settings["ServerURL"] == "https://doh.myhost.workers.dev/dns-query"
+
+
+# --------------------------------------------------------------------------
+# Safety floors.
+#
+# These exist because the failure mode they guard against has already happened
+# in production: the published list silently collapsed from 12 to 7 domains on
+# 2026-09-11 and stayed degraded for six days. Nothing failed, because every
+# gate only guarded the *upper* end of the range.
+# --------------------------------------------------------------------------
+
+def _report(domains):
+    from main import DomainDiscoveryReport
+    return DomainDiscoveryReport(
+        target_domains=tuple(sorted(domains)),
+        blocked_by={d: ("upstream",) for d in domains},
+        inconclusive_domains=(), endpoint_stats={}, reference_queries=0,
+    )
+
+
+def test_a_silently_shrunken_list_is_rejected():
+    """The floor must trip on the 2026-09-11 style collapse (12 -> 7)."""
+    with pytest.raises(RuntimeError, match="safety floor"):
+        AntiRevokeOrchestrator._validate_report(
+            "Normal", ["c.example"] * 133, _report([f"d{i}.example" for i in range(7)]))
+
+
+def test_a_healthy_list_passes_the_floor():
+    AntiRevokeOrchestrator._validate_report(
+        "Normal", ["c.example"] * 133, _report([f"d{i}.example" for i in range(20)]))
+
+
+def test_the_floor_is_below_every_healthy_observed_value():
+    """Smallest healthy value ever observed was 13; smallest degraded was 7."""
+    assert 7 < MIN_TARGET_DOMAINS < 13
+
+
+def test_filtering_cannot_empty_the_normal_profile(tmp_path):
+    """Post-filter re-validation: the filter runs after the first check.
+
+    On 2026-09-11 six of the seven surviving domains were exclusion-listed, so a
+    collapse like that one, replayed through the filter, empties the list. An
+    empty SupplementalMatchDomains array still produces a non-empty file, so
+    every downstream gate would pass.
+    """
+    kept, deferred = AntiRevokeOrchestrator._filter_domains(
+        sorted(ALWAYS_EXCLUDED_DOMAINS | INSTALL_TIME_EXCLUDED_DOMAINS),
+        ALWAYS_EXCLUDED_DOMAINS | INSTALL_TIME_EXCLUDED_DOMAINS,
+    )
+    assert kept == [], "precondition: the filter really can empty the list"
+
+    # ...and the pipeline must refuse that report rather than publish it.
+    with pytest.raises(RuntimeError, match="no target domains"):
+        AntiRevokeOrchestrator._validate_report(
+            "Normal (post-filter)", ["c.example"] * 133, _report([]))
+
+
+def test_pipeline_refuses_to_publish_an_all_exclusions_list(tmp_path, monkeypatch):
+    """End-to-end: if filtering empties the list, run() must fail, not publish.
+
+    Replays the 2026-09-11 shape (a short list whose survivors are all
+    exclusion-listed) through the real orchestration path.
+    """
+    from main import DomainDiscoveryReport
+
+    every_exclusion = sorted(ALWAYS_EXCLUDED_DOMAINS | INSTALL_TIME_EXCLUDED_DOMAINS)
+    sources = [{
+        "name": "multi", "url": "https://multi.example", "xpath": "//a",
+        "preferred_payload_identifier": "normal",
+        "enhanced_payload_identifier": "enhanced",
+    }]
+    profiles = {"multi": plistlib.dumps({"PayloadContent": [
+        payload("normal", "https://normal.example/dns-query", every_exclusion),
+        payload("enhanced", "https://enhanced.example/dns-query", every_exclusion),
+    ]})}
+    candidates = every_exclusion + [f"clean{i}.example" for i in range(120)]
+
+    orchestrator = AntiRevokeOrchestrator(output_dir=str(tmp_path),
+                                          min_target_domains=1)
+    monkeypatch.setattr(orchestrator.scraper, "fetch_apple_domains", lambda _: candidates)
+    monkeypatch.setattr(orchestrator.scraper, "scrape_sources", lambda _: profiles)
+    orchestrator.scraper.download_urls = {"multi": "https://multi.example"}
+    monkeypatch.setattr(
+        orchestrator.probe, "resolve",
+        lambda url, domain: Resolution("invalid_address", ("0.0.0.0",), ("NOERROR",)),
+    )
+
+    # The un-filtered report passes validation (non-empty, under the ratio cap),
+    # so only the post-filter check can stop this.
+    assert orchestrator.run(sources) is False
+
+
+def test_a_bad_backend_url_surfaces_its_specific_diagnostic(tmp_path):
+    """A misconfigured backend must say why, not fail as a generic signing error.
+
+    `resolve_doh_url` raises ValueError("DoH backend must use https://..."), but
+    create_profile's blanket `except Exception` used to swallow it and return
+    None, so the operator saw only "Failed to sign the iOS configuration
+    profile" and went looking in the wrong place.
+    """
+    with pytest.raises(ValueError, match="must use https://"):
+        CryptoHandler().create_profile(
+            ["ocsp.apple.com"],
+            output_file=str(tmp_path / "p.plist"),
+            backend_host="http://insecure.example.com",
+        )
+
+
+def test_the_floor_does_not_apply_to_the_enhanced_endpoint():
+    """The enhanced endpoint is legitimately small and must not trip the floor.
+
+    It only carries the extras the normal list does not already block. The live
+    pipeline reports 8 endpoint targets (6 surviving as extras), so applying the
+    normal-profile floor of 10 there would fail every healthy run.
+    """
+    eight = _report([f"d{i}.example" for i in range(8)])
+    # What the real pipeline does for the enhanced endpoint:
+    AntiRevokeOrchestrator._validate_report(
+        "Enhanced", ["c.example"] * 133, eight, min_target_domains=1)
+    # ...whereas the normal profile would (correctly) reject the same count.
+    with pytest.raises(RuntimeError, match="safety floor"):
+        AntiRevokeOrchestrator._validate_report(
+            "Normal", ["c.example"] * 133, eight)
+
+
+def test_enhanced_metadata_lists_itself(tmp_path):
+    """Both metadata files must describe the same artifact set.
+
+    Root metadata listed the enhanced metadata file while the enhanced metadata
+    did not list itself, so the same path appeared in one listing and not the
+    other depending on which file you opened.
+    """
+    from utils.crypto_handler import DnsEndpoint
+    orchestrator = AntiRevokeOrchestrator(output_dir=str(tmp_path))
+    endpoint = DnsEndpoint(source="s", url="https://x/dns-query",
+                           payload_identifier="p", display_name="n", domains=())
+    path = orchestrator.generate_enhanced_metadata(
+        endpoint, ["a.example"], ["a.example"], {"Surge": "s.txt"},
+        "2026-10-06T00:00:00Z")
+    generated = json.loads(Path(path).read_text(encoding="utf-8"))["generated_files"]
+    assert "Metadata" in generated
+    assert Path(generated["Metadata"]).name == "metadata.json"

@@ -508,6 +508,13 @@ class CryptoHandler:
             logger.info(f"Created profile with {len(set(domains))} domains at {output_file}")
             return output_file
 
+        except ValueError:
+            # A bad backend value is a configuration error, not a transient
+            # failure, and `resolve_doh_url` already explains exactly what is
+            # wrong ("must use https://"). Swallowing it here reduced that to
+            # "Profile creation error" and returned None, which the caller then
+            # reported as a generic signing failure -- hiding the real cause.
+            raise
         except Exception as e:
             logger.error(f"Profile creation error: {e}")
             return None

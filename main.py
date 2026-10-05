@@ -25,6 +25,11 @@ REFERENCE_DOH_URL = "https://cloudflare-dns.com/dns-query"
 MIN_APPLE_CANDIDATES = 100
 MAX_TARGET_RATIO = 0.5
 
+# Floor for the discovered target list. Every healthy value observed in the
+# repository's history is 13-34 domains; the two known degradations were 7 and
+# 8. Without a floor, a silent collapse is published as a normal update.
+MIN_TARGET_DOMAINS = 10
+
 # The DoH backend the generated profiles point at. Override with BACKEND_HOST
 # when self-hosting: upstream's server is a catch-all that answers NXDOMAIN for
 # every name, so it blocks exactly what is listed and nothing else.
@@ -118,10 +123,12 @@ class AntiRevokeOrchestrator:
         workers: int = 20,
         reference_doh_url: str = REFERENCE_DOH_URL,
         backend_host: str = DEFAULT_BACKEND_HOST,
+        min_target_domains: int = MIN_TARGET_DOMAINS,
     ):
         self.cert_path = cert_path
         self.key_path = key_path
         self.backend_host = backend_host
+        self.min_target_domains = min_target_domains
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.enhanced_output_dir = self.output_dir / "enhanced"
@@ -338,6 +345,12 @@ class AntiRevokeOrchestrator:
         generated_files: Dict[str, str],
         timestamp: str,
     ) -> str:
+        # Register the metadata file in its own listing. The caller previously
+        # added it only afterwards, so output/enhanced/metadata.json described
+        # seven files while the root metadata described eight -- the same path
+        # listed inconsistently depending on which file you read.
+        metadata_file = self.enhanced_output_dir / "metadata.json"
+        generated_files.setdefault("Metadata", str(metadata_file))
         metadata = {
             "schema_version": 1,
             "timestamp": timestamp,
@@ -347,7 +360,6 @@ class AntiRevokeOrchestrator:
             "merged_profile_domain_count": len(merged_domains),
             "generated_files": generated_files,
         }
-        metadata_file = self.enhanced_output_dir / "metadata.json"
         with open(metadata_file, "w", encoding="utf-8") as file_handle:
             json.dump(metadata, file_handle, indent=2, ensure_ascii=False)
             file_handle.write("\n")
@@ -358,9 +370,23 @@ class AntiRevokeOrchestrator:
         label: str,
         candidate_domains: Sequence[str],
         report: DomainDiscoveryReport,
+        min_target_domains: int = MIN_TARGET_DOMAINS,
     ) -> None:
         if not report.target_domains:
             raise RuntimeError(f"{label} DNS discovery produced no target domains")
+        # Lower bound, not just an upper one. History shows the list can
+        # silently collapse instead of failing: on 2026-09-11 it dropped 12 -> 7
+        # domains and stayed there for six days, dropping every DigiCert OCSP/CRL
+        # host, and nothing flagged it because the run "succeeded" and the ratio
+        # gate only guards the top end. 10 is below every healthy value observed
+        # (13-34) and above every degraded one (7-8), so it separates the two.
+        # Tests that drive the pipeline with small synthetic lists (and any
+        # deployment with a deliberately short list) lower it explicitly.
+        if len(report.target_domains) < min_target_domains:
+            raise RuntimeError(
+                f"{label} target-domain count fell below the safety floor: "
+                f"{len(report.target_domains)} < {min_target_domains}"
+            )
         if len(report.target_domains) / len(candidate_domains) > MAX_TARGET_RATIO:
             raise RuntimeError(
                 f"{label} target-domain ratio exceeded the safety threshold: "
@@ -483,8 +509,15 @@ class AntiRevokeOrchestrator:
             enhanced_report = self.probe.discover(
                 candidate_domains, [enhanced_endpoint]
             )
-            self._validate_report("Normal", candidate_domains, normal_report)
-            self._validate_report("Enhanced", candidate_domains, enhanced_report)
+            self._validate_report("Normal", candidate_domains, normal_report,
+                                  self.min_target_domains)
+            # The floor is deliberately NOT applied to the enhanced endpoint.
+            # That endpoint only carries the handful of extra domains the
+            # normal list does not already block, and it is legitimately tiny:
+            # the live run reports 8 endpoint targets, of which 6 survive as
+            # "extra". Applying the floor here would fail every healthy run.
+            self._validate_report("Enhanced", candidate_domains, enhanced_report,
+                                  min_target_domains=1)
 
             # Filter the install-time profile FIRST. The enhanced "extra" set is
             # the enhanced endpoint's domains minus whatever normal ended up
@@ -493,6 +526,17 @@ class AntiRevokeOrchestrator:
             # rule files, i.e. lost entirely. Doing it in this order puts PPQ
             # back where it belongs: enhanced-only.
             normal_report, deferred_domains = self._filter_normal_report(normal_report)
+
+            # Re-validate *after* filtering. The check above runs on the raw
+            # discovery result, but the filter can legitimately empty the list:
+            # on 2026-09-11 the live list collapsed to 7 domains, and six of the
+            # domains that survive such a collapse are exclusion-listed. An empty
+            # SupplementalMatchDomains array would then pass every downstream
+            # gate -- the profiles would be non-empty files, and
+            # check_profile_contract.py only inspects domain contents -- so the
+            # run would publish a profile matching no domains at all.
+            self._validate_report("Normal (post-filter)", candidate_domains,
+                                  normal_report, self.min_target_domains)
 
             enhanced_extra_domains, merged_enhanced_domains = (
                 self.build_enhanced_domain_sets(

@@ -115,6 +115,18 @@ returns only the canonical host and not the CNAME variants).
 - Both Sideloading payload identifiers must exist.
 - Apple must yield at least 100 candidate domains.
 - Normal and enhanced target sets must each remain below 50% of candidates.
+- The normal target set must not fall below `MIN_TARGET_DOMAINS` (10). Every
+  healthy value in this repository's history is 13-34; the two known
+  degradations were 7 and 8. Without this floor a silent collapse publishes as a
+  normal update — on 2026-09-11 the list dropped 12 → 7 and stayed there for six
+  days, losing every DigiCert OCSP/CRL host, with no failing run to notice it.
+  The floor deliberately does **not** apply to the enhanced endpoint, which
+  legitimately reports only ~8 targets (6 surviving as extras).
+- The normal set is validated **again after filtering**. Filtering can empty it
+  (on 2026-09-11 six of the seven survivors were exclusion-listed), and an empty
+  `SupplementalMatchDomains` array still produces a non-empty file, so the ratio
+  gate, the workflow's `test -s` checks and `check_profile_contract.py` would all
+  pass a profile that matches no domains at all.
 - Every DNS query must complete after retries.
 - Normal discovery and enhanced endpoint discovery must both produce targets.
 - All normal and enhanced artifacts must be generated.
