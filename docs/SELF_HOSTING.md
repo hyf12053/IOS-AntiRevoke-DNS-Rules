@@ -55,9 +55,13 @@ From the repository root:
 
 ```bash
 cd worker
-npm install
-npx wrangler deploy
+wrangler deploy
 ```
+
+No `npm install` is needed: the Worker has no runtime dependencies, and the
+globally installed Wrangler bundles it on its own. (Wrangler may warn that
+`esbuild` and `workerd` have install scripts it did not run — that warning does
+not affect bundling.)
 
 Wrangler prints the deployed URL, e.g.
 `https://antirevoke-doh.yourname.workers.dev`. Verify it:

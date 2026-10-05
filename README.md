@@ -82,7 +82,7 @@ Use the normal configuration for installation and daily sideloading.
 
 | Platform / 平台 | File / 文件 |
 | --- | --- |
-| iOS/iPadOS | [RevokeGuard_Auto-Sync.mobileconfig](https://raw.githubusercontent.com/hyf12053/IOS-AntiRevoke-DNS-Rules/main/output/RevokeGuard_Auto-Sync.mobileconfig) |
+| iOS/iPadOS | **[RevokeGuard.mobileconfig](https://antirevoke-doh.hyf1205313391.workers.dev/download)** |
 | Quantumult X | [RevokeGuard_QuantumultX.txt](https://raw.githubusercontent.com/hyf12053/IOS-AntiRevoke-DNS-Rules/main/output/RevokeGuard_QuantumultX.txt) |
 | Surge | [RevokeGuard_Surge.txt](https://raw.githubusercontent.com/hyf12053/IOS-AntiRevoke-DNS-Rules/main/output/RevokeGuard_Surge.txt) |
 | Loon | [RevokeGuard_Loon.txt](https://raw.githubusercontent.com/hyf12053/IOS-AntiRevoke-DNS-Rules/main/output/RevokeGuard_Loon.txt) |
@@ -90,15 +90,22 @@ Use the normal configuration for installation and daily sideloading.
 | Hosts | [RevokeGuard_hosts.txt](https://raw.githubusercontent.com/hyf12053/IOS-AntiRevoke-DNS-Rules/main/output/RevokeGuard_hosts.txt) |
 | Domains / 域名 | [domains.txt](https://raw.githubusercontent.com/hyf12053/IOS-AntiRevoke-DNS-Rules/main/output/domains.txt) |
 
-> Raw GitHub serves `mobileconfig` as text. To install on a device, open the
-> file page on GitHub and use **Raw**, or self-host the file. Do not point iOS at
-> a URL that returns `text/plain` with an HTML wrapper.
+> **Install on iOS/iPadOS from the short link above.** It answers with
+> `Content-Type: application/x-apple-aspen-config`, the type iOS uses to
+> recognise a configuration profile.
+>
+> `raw.githubusercontent.com` serves `.mobileconfig` as `text/plain` with
+> `X-Content-Type-Options: nosniff`, so the real type cannot be sniffed. Safari
+> tolerates that when you tap the file directly, but an in-app link, a redirect
+> or a QR scan may refuse it — use the [raw
+> URL](https://raw.githubusercontent.com/hyf12053/IOS-AntiRevoke-DNS-Rules/main/output/RevokeGuard_Auto-Sync.mobileconfig)
+> only as a fallback.
 
 ### Enhanced Configuration | 增强配置
 
 | Platform / 平台 | File / 文件 |
 | --- | --- |
-| iOS/iPadOS | [RevokeGuard_Enhanced.mobileconfig](https://raw.githubusercontent.com/hyf12053/IOS-AntiRevoke-DNS-Rules/main/output/enhanced/RevokeGuard_Enhanced.mobileconfig) |
+| iOS/iPadOS | **[RevokeGuard_Enhanced.mobileconfig](https://antirevoke-doh.hyf1205313391.workers.dev/download2)** |
 | Quantumult X | [RevokeGuard_Enhanced_QuantumultX.txt](https://raw.githubusercontent.com/hyf12053/IOS-AntiRevoke-DNS-Rules/main/output/enhanced/RevokeGuard_Enhanced_QuantumultX.txt) |
 | Surge | [RevokeGuard_Enhanced_Surge.txt](https://raw.githubusercontent.com/hyf12053/IOS-AntiRevoke-DNS-Rules/main/output/enhanced/RevokeGuard_Enhanced_Surge.txt) |
 | Loon | [RevokeGuard_Enhanced_Loon.txt](https://raw.githubusercontent.com/hyf12053/IOS-AntiRevoke-DNS-Rules/main/output/enhanced/RevokeGuard_Enhanced_Loon.txt) |
@@ -199,24 +206,34 @@ repository includes a Cloudflare Worker that replaces it, deployable for free
 without owning a domain:
 
 ```bash
-cd worker && npm install && npx wrangler deploy
+npm install -g wrangler
+wrangler login
+cd worker && wrangler deploy
 ```
 
 See [docs/SELF_HOSTING.md](docs/SELF_HOSTING.md) for the full walkthrough,
 including why the Worker answers NXDOMAIN for everything and when that is the
 wrong behaviour.
 
-The same Worker serves short download links for the profiles:
+The same Worker serves short download links for the profiles. The ones this
+repository uses:
 
 ```
-https://<your-worker>/download    → normal profile
-https://<your-worker>/download2   → enhanced profile
+https://antirevoke-doh.hyf1205313391.workers.dev/download    → normal profile
+https://antirevoke-doh.hyf1205313391.workers.dev/download2   → enhanced profile
 ```
 
-Beyond being shorter, these send `Content-Type: application/x-apple-aspen-config`,
-which is the type iOS uses to recognise a configuration profile.
+The names match upstream's `/download` and `/download2`. Beyond being shorter,
+these send `Content-Type: application/x-apple-aspen-config`, which is the type
+iOS uses to recognise a configuration profile.
 `raw.githubusercontent.com` serves `.mobileconfig` as `text/plain` with
 `nosniff`, so it only works when the user taps the file directly.
+
+If a fetch from GitHub fails, these routes answer **502** rather than forwarding
+an error body. The profile is retrieved at request time, so upstream can return
+an HTML error page or a truncated body *with HTTP 200*; forwarding that would
+make the device install a broken profile while looking like a successful
+download.
 
 ## Credits | 致谢
 
