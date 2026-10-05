@@ -1,2 +1,7 @@
 -r requirements.txt
 pytest>=8.0.0
+# Used by tests/test_install_verification.py to build certificates with an
+# explicit validity window. `openssl req -not_before/-not_after` would do it
+# without a dependency, but those flags only exist in OpenSSL 3.5+ and the CI
+# runner ships 3.0, so the tests failed on every run.
+cryptography>=42.0.0

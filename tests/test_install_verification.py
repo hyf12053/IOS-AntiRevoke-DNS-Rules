@@ -216,19 +216,46 @@ def test_backend_host_is_used_for_server_url(tmp_path):
 # --------------------------------------------------------------------------
 
 def _make_cert(tmp_path, cn, not_before, not_after):
-    """Create a self-signed certificate with an explicit validity window."""
-    import subprocess
+    """Create a self-signed certificate with an explicit validity window.
 
-    key = tmp_path / "k.pem"
-    cert = tmp_path / "c.pem"
-    subprocess.run(
-        ["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes",
-         "-keyout", str(key), "-out", str(cert),
-         "-not_before", not_before, "-not_after", not_after,
-         "-subj", f"/CN={cn}"],
-        check=True, capture_output=True,
+    Dates are given as ``YYYYMMDDHHMMSSZ``. Built with ``cryptography`` rather
+    than ``openssl req -not_before/-not_after``: those flags only exist in
+    OpenSSL 3.5+, while the CI runner ships OpenSSL 3.0, so the subprocess form
+    failed on every run with "Unknown option -not_before".
+    """
+    import datetime
+
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from cryptography.x509.oid import NameOID
+
+    def parse(value):
+        return datetime.datetime.strptime(value, "%Y%m%d%H%M%SZ").replace(
+            tzinfo=datetime.timezone.utc)
+
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, cn)])
+    certificate = (
+        x509.CertificateBuilder()
+        .subject_name(name)
+        .issuer_name(name)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(parse(not_before))
+        .not_valid_after(parse(not_after))
+        .sign(key, hashes.SHA256())
     )
-    return cert, key
+
+    key_path = tmp_path / "k.pem"
+    cert_path = tmp_path / "c.pem"
+    key_path.write_bytes(key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.TraditionalOpenSSL,
+        encryption_algorithm=serialization.NoEncryption(),
+    ))
+    cert_path.write_bytes(certificate.public_bytes(serialization.Encoding.PEM))
+    return cert_path, key_path
 
 
 def test_expired_certificate_is_rejected(tmp_path):

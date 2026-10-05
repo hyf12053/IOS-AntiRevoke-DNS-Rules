@@ -74,6 +74,7 @@ jobs:
           echo "signing=true" >> "$GITHUB_OUTPUT"
 
       - name: Run discovery and generation pipeline
+        id: pipeline
         env:
           SSL_CERT_PATH: ${{ steps.signing.outputs.signing == 'true' && 'fullchain.pem' || '' }}
           SSL_KEY_PATH: ${{ steps.signing.outputs.signing == 'true' && 'privkey.pem' || '' }}
@@ -165,6 +166,15 @@ jobs:
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "- Status: ${{ job.status }}" >> "$GITHUB_STEP_SUMMARY"
           echo "- Timestamp: $(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> "$GITHUB_STEP_SUMMARY"
+          # These numbers come from the committed metadata.json. When the
+          # pipeline step never ran (an earlier step failed), that file is the
+          # previous day's, and printing it next to "Status: failure" reads as
+          # if the pipeline succeeded. Say so explicitly instead.
+          if [ "${{ steps.pipeline.outcome }}" != "success" ]; then
+            echo "- ⚠️ The pipeline step did **not** run successfully; the domain" >> "$GITHUB_STEP_SUMMARY"
+            echo "  counts below are from the previously committed metadata and do" >> "$GITHUB_STEP_SUMMARY"
+            echo "  **not** describe this run." >> "$GITHUB_STEP_SUMMARY"
+          fi
           if [ -f output/metadata.json ]; then
             python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
           import json
