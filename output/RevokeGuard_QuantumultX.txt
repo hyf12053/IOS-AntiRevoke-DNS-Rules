@@ -1,27 +1,36 @@
 # Project: iOS-AntiRevoke-DNS-Rules
 # Author: RzMY
-# Updated: 2026-10-14 04:37:34 UTC
-# Domain Count: 20
+# Updated: 2026-10-16 04:15:23 UTC
+# Domain Count: 29
 # License: MIT License
 # Format: host, domain, action
 
 host, applejr.net, reject
 host, certs.apple.com, reject
+host, certs.apple.com.edgekey.net, reject
 host, certs.g.aaplimg.com, reject
 host, crl.apple.com, reject
+host, crl.apple.com.akadns.net, reject
+host, crl.apple.com.edgekey.net, reject
+host, crl.entrust.net, reject
 host, crl.g.aaplimg.com, reject
 host, crl3.digicert.com, reject
 host, crl4.digicert.com, reject
 host, khoindvn.com, reject
 host, ocsp-a.g.aaplimg.com, reject
+host, ocsp-lb.apple.com.akadns.net, reject
 host, ocsp.apple.com, reject
+host, ocsp.apple.com.edgekey.net, reject
 host, ocsp.digicert.cn, reject
 host, ocsp.digicert.com, reject
 host, ocsp2.apple.com, reject
+host, ocsp2.apple.com.edgekey.net, reject
 host, ocsp2.apple.com.edgesuite.net, reject
 host, ocsp2.g.aaplimg.com, reject
 host, ocsp3.apple.com, reject
 host, ocsp4.apple.com, reject
 host, valid-apple.g.aaplimg.com, reject
 host, valid.apple.com, reject
+host, valid.apple.com.akadns.net, reject
+host, valid.apple.com.edgekey.net, reject
 host, vuvankhoi.com, reject

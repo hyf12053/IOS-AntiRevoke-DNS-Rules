@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "timestamp": "2026-10-14T04:37:34.331777Z",
+  "timestamp": "2026-10-16T04:15:23.518980Z",
   "dns_endpoint": {
     "source": "sideloading",
     "url": "https://novadns-ppq.novadev.vip/dns-query",
@@ -17,7 +17,7 @@
     "vpp.itunes.apple.com"
   ],
   "extra_domain_count": 6,
-  "merged_profile_domain_count": 26,
+  "merged_profile_domain_count": 35,
   "generated_files": {
     "Quantumult X": "output/enhanced/RevokeGuard_Enhanced_QuantumultX.txt",
     "Surge": "output/enhanced/RevokeGuard_Enhanced_Surge.txt",

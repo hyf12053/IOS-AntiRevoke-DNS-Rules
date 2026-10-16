@@ -20,17 +20,24 @@
 				<array>
 					<string>applejr.net</string>
 					<string>certs.apple.com</string>
+					<string>certs.apple.com.edgekey.net</string>
 					<string>certs.g.aaplimg.com</string>
 					<string>crl.apple.com</string>
+					<string>crl.apple.com.akadns.net</string>
+					<string>crl.apple.com.edgekey.net</string>
+					<string>crl.entrust.net</string>
 					<string>crl.g.aaplimg.com</string>
 					<string>crl3.digicert.com</string>
 					<string>crl4.digicert.com</string>
 					<string>khoindvn.com</string>
 					<string>ocsp-a.g.aaplimg.com</string>
+					<string>ocsp-lb.apple.com.akadns.net</string>
 					<string>ocsp.apple.com</string>
+					<string>ocsp.apple.com.edgekey.net</string>
 					<string>ocsp.digicert.cn</string>
 					<string>ocsp.digicert.com</string>
 					<string>ocsp2.apple.com</string>
+					<string>ocsp2.apple.com.edgekey.net</string>
 					<string>ocsp2.apple.com.edgesuite.net</string>
 					<string>ocsp2.g.aaplimg.com</string>
 					<string>ocsp3.apple.com</string>
@@ -42,6 +49,8 @@
 					<string>usw2-ppq-ext-prod.apple.com</string>
 					<string>valid-apple.g.aaplimg.com</string>
 					<string>valid.apple.com</string>
+					<string>valid.apple.com.akadns.net</string>
+					<string>valid.apple.com.edgekey.net</string>
 					<string>vpp.itunes.apple.com</string>
 					<string>vuvankhoi.com</string>
 				</array>
@@ -59,9 +68,9 @@
 		</dict>
 	</array>
 	<key>PayloadDescription</key>
-	<string>Auto-generated on 2026-10-14 04:37:34 UTC. Blocked Domains: 26. Backend: reject.rzmy.dpdns.org.</string>
+	<string>Auto-generated on 2026-10-16 04:15:23 UTC. Blocked Domains: 35. Backend: reject.rzmy.dpdns.org.</string>
 	<key>PayloadDisplayName</key>
-	<string>RevokeGuard Enhanced 2026-10-14</string>
+	<string>RevokeGuard Enhanced 2026-10-16</string>
 	<key>PayloadIdentifier</key>
 	<string>com.revokeGuard.e0e0b6aa-182a-502b-91db-9947c2cf9f3c</string>
 	<key>PayloadOrganization</key>
