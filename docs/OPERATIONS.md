@@ -52,8 +52,8 @@ When a page changes:
 
 1. Update its XPath only after confirming that it points to the intended `.mobileconfig` link.
 2. Run `python main.py --debug` in the `mine` environment.
-3. Inspect `output/metadata.json` and confirm the resolved download URL and selected endpoints. A non-empty `domains` list means the payload was used directly; its `profile_domains` statistic records the domain count without DNS queries.
-4. If a profile contains multiple DNS payloads, set `preferred_payload_identifier` and `enhanced_payload_identifier` explicitly instead of relying on page order.
+3. Inspect `output/metadata.json` and confirm the resolved download URL, configured domain-list URLs, and selected endpoints. A non-empty `domains` list means the payload or deny list was used directly; its `profile_domains` statistic records the domain count without DNS queries.
+4. If a profile contains multiple DNS payloads, set `preferred_payload_identifiers` and `enhanced_payload_identifiers` explicitly instead of relying on page order. Lists are tried in order; keep the previous upstream identifiers as fallbacks during a rebrand.
 5. Add or update a unit test for any parser behavior change.
 
 ## Common failures
@@ -70,9 +70,9 @@ The downloaded profile has neither a usable `DNSSettings.SupplementalMatchDomain
 
 At least one upstream endpoint or the local network failed after retries. Rerun later; do not convert this condition into blocked domains.
 
-`preferred payload ... no longer exists`
+`no longer contains any preferred payload`
 
-The Sideloading profile changed payload identifiers. Inspect all `discovered_endpoints` and select both the `whileinstalling` normal mode and `afterinstalling` enhanced mode explicitly.
+The Sideloading profile changed payload identifiers again. Inspect all `discovered_endpoints` and add the current `whileinstalling` / `afterinstalling` identifiers to the front of the ordered lists in `PROFILE_SOURCES`, keeping the old ones as fallbacks.
 
 `Failed to sign the iOS configuration profile`
 

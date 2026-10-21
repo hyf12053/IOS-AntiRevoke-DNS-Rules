@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import re
 import time
-from typing import Dict, Iterable, List, Optional
+from typing import Dict, Iterable, List, Optional, Tuple
 from urllib.parse import urljoin
 
 import requests
@@ -40,6 +40,8 @@ class ProfileScraper:
             }
         )
         self.download_urls: Dict[str, str] = {}
+        self.domain_lists: Dict[str, Tuple[str, ...]] = {}
+        self.enhanced_domain_lists: Dict[str, Tuple[str, ...]] = {}
 
     def _request(self, url: str) -> requests.Response:
         last_error: Optional[Exception] = None
@@ -102,9 +104,74 @@ class ProfileScraper:
 
         return content
 
+    @classmethod
+    def extract_plain_domains(cls, content: bytes) -> List[str]:
+        """Extract DNS names from a plain-text domain-list response.
+
+        The upstream lists are plain one-domain-per-line files today, but the
+        same helper accepts the shapes such files commonly take in the wild:
+        hosts entries (``0.0.0.0 example.com``), adblock rules
+        (``||example.com^``), wildcards and comments. Anything that does not
+        look like a host name is ignored rather than guessed at.
+        """
+        text = content.decode("utf-8-sig", errors="replace")
+        domains = set()
+
+        for line in text.splitlines():
+            value = line.strip()
+            if not value or value.startswith(("#", "!", "//")):
+                continue
+
+            # Strip inline comments before looking at the rest of the line.
+            for marker in ("#", "!"):
+                index = value.find(marker)
+                if index > 0:
+                    value = value[:index].strip()
+
+            # Adblock options: ||example.com^$third-party
+            if "$" in value:
+                value = value.split("$", 1)[0].strip()
+            # Hosts format: "0.0.0.0 example.com" (keep the last field).
+            if any(char.isspace() for char in value):
+                value = value.split()[-1]
+            # Adblock anchor / wildcard prefixes.
+            if value.startswith("||"):
+                value = value[2:]
+            value = value.rstrip("^").strip()
+            value = value.lstrip("*.")
+            value = value.rstrip(".")
+
+            if not value or not cls.DOMAIN_PATTERN.fullmatch(value):
+                continue
+            domains.add(value.lower())
+
+        return sorted(domains)
+
+    def download_domain_list(self, url: str) -> Tuple[str, ...]:
+        """Download an upstream plain-text list of target domains.
+
+        A source may publish a profile whose ``SupplementalMatchDomains`` is
+        only a routing scope (it contains allowlist and helper hosts), with the
+        actual block set in a separate list. Treating the profile list as the
+        target set would then block Apple's app-attestation hosts, so the list
+        must be fetched separately and used instead.
+        """
+        response = self._request(url)
+        content_type = response.headers.get("content-type", "").lower()
+        if "text/html" in content_type:
+            raise ScrapeError(f"Domain-list URL returned HTML: {url}")
+
+        domains = tuple(self.extract_plain_domains(response.content))
+        if not domains:
+            raise ScrapeError(f"Domain-list URL yielded no domains: {url}")
+        logger.info("Loaded %s domains from %s", len(domains), url)
+        return domains
+
     def scrape_sources(self, sources: Iterable[Dict[str, str]]) -> Dict[str, bytes]:
         profiles: Dict[str, bytes] = {}
         self.download_urls = {}
+        self.domain_lists = {}
+        self.enhanced_domain_lists = {}
 
         for source in sources:
             name = source.get("name")
@@ -117,6 +184,22 @@ class ProfileScraper:
             download_url = self._extract_download_link(page, xpath, url)
             profiles[name] = self.download_profile(download_url)
             self.download_urls[name] = download_url
+
+            for list_key, target in (
+                ("domain_list_url", self.domain_lists),
+                ("enhanced_domain_list_url", self.enhanced_domain_lists),
+            ):
+                list_url = source.get(list_key)
+                if not list_url:
+                    continue
+                target[name] = self.download_domain_list(list_url)
+                logger.info(
+                    "Loaded %s domains from %s (%s)",
+                    len(target[name]),
+                    name,
+                    list_key,
+                )
+
             logger.info("Downloaded required profile from %s", name)
 
         return profiles

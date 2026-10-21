@@ -32,6 +32,7 @@ ALWAYS_BANNED = {
 # Unsafe only while installing an app; allowed in the enhanced profile.
 INSTALL_TIME_BANNED = {
     "ppq.apple.com",
+    "ppq-ext.apple.com",
     "ppq-ext.v.aaplimg.com",
     "ppq-st-ext.itunes.apple.com",
     "use1-ppq-ext-prod.apple.com",
@@ -41,6 +42,21 @@ INSTALL_TIME_BANNED = {
 
 NORMAL_PROFILE = "output/RevokeGuard_Auto-Sync.mobileconfig"
 ENHANCED_PROFILE = "output/enhanced/RevokeGuard_Enhanced.mobileconfig"
+
+
+def matches_banned(domain: str, banned: set) -> bool:
+    """Match suffix-wise, because SupplementalMatchDomains does.
+
+    An exact intersection would accept ``register.appattest.apple.com`` while
+    the published profile still blocks the whole ``appattest.apple.com`` family.
+    """
+    normalized = domain.strip().lower().rstrip(".")
+    if normalized.startswith("*."):
+        normalized = normalized[2:]
+    return any(
+        normalized == entry or normalized.endswith(f".{entry}")
+        for entry in banned
+    )
 
 
 def domains_of(path: str) -> list:
@@ -73,8 +89,9 @@ def main() -> int:
     ):
         current = set(domains_of(path))
         published[path] = current
-        for domain in sorted(current & banned):
-            problems.append(f"{path}: must not block {domain}")
+        for domain in sorted(current):
+            if matches_banned(domain, banned):
+                problems.append(f"{path}: must not block {domain}")
 
     # The enhanced profile replaces the normal one on the device, so switching
     # profiles must not silently drop protection.

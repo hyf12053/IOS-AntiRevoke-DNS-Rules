@@ -59,7 +59,7 @@ yet valid — previously nothing checked this, because
 ## Features | 特性
 
 - Daily discovery based on [Apple's official host list](https://support.apple.com/zh-cn/101555). / 每日基于 [Apple 官方主机列表](https://support.apple.com/zh-cn/101555)更新候选域名。
-- DNS behavior is compared across Khoindvn, AppleJr and Sideloading endpoints. / 对比 Khoindvn、AppleJr 与 Sideloading 的 DNS 查询结果。
+- Domain data is collected from the Khoindvn, AppleJr and Sideloading profiles and published lists. / 从 Khoindvn、AppleJr 与 Sideloading 的描述文件及公开列表收集域名数据。
 - Publishes normal and enhanced configurations separately. / 分别发布正常配置与增强配置。
 - Guarantees the app-verification path stays reachable while installing. / 保证安装期间 App 验证链路可达。
 - Supports iOS/iPadOS, Quantumult X, Surge, Loon, Shadowrocket and Hosts. / 支持 iOS/iPadOS、Quantumult X、Surge、Loon、Shadowrocket 与 Hosts。
@@ -142,18 +142,17 @@ The daily workflow performs the following operations:
 
 1. Read candidate domains from Apple's official enterprise network page. / 从 Apple 官方企业网络页面读取候选域名。
 2. Download and decode the three upstream DNS profiles. / 下载并解析三个上游 DNS 描述文件。
-3. Use explicit `DNSSettings.SupplementalMatchDomains` lists directly as results; otherwise query the candidates through the normal endpoints below. / 若所选 payload 的 `DNSSettings.SupplementalMatchDomains` 包含域名列表，直接作为结果，不再探测该源；否则使用以下正常端点查询候选域名。
-4. Process Sideloading `afterinstalling` separately using the same list-or-probe logic and calculate its additional domains. / 按相同的域名列表或探测逻辑单独处理 Sideloading `afterinstalling`，并计算新增域名。
-5. Apply the exclusions to the normal list, then derive the enhanced set so that
-   every deferred domain still reaches the enhanced outputs. / 对正常列表应用排除规则，再据此推导增强集合，确保被推迟的域名仍然进入增强产物。
+3. Use explicit `DNSSettings.SupplementalMatchDomains` lists directly as results; otherwise query the candidates through the normal endpoints below. When a source publishes a plain-text deny list, that list replaces the profile's match domains. / 若所选 payload 的 `DNSSettings.SupplementalMatchDomains` 包含域名列表，直接作为结果，不再探测该源；若该源另外发布纯文本 denylist，则用 denylist 取代描述文件里的匹配列表。
+4. Process Sideloading separately: since 2026-10-20 both of its payloads share one broad match-domain set that includes allowlist and helper hosts, so `denylist.txt` (normal) and `denylist-ppq.txt` (enhanced) are used as the target sets instead. / 单独处理 Sideloading：2026-10-20 起它的两个 payload 共用一份宽泛的匹配列表（含放行与辅助域名），因此改用 `denylist.txt`（正常）与 `denylist-ppq.txt`（增强）作为目标集合。
+5. Remove provider-owned connectivity/status domains (`applejr.net`, `khoindvn.com`, `vuvankhoi.com`, `*.novadev.vip`, …), then apply the exclusions to the normal list and derive the enhanced set so that every deferred domain still reaches the enhanced outputs. / 先移除提供商自有的连通性/状态检查域名，再对正常列表应用排除规则，并据此推导增强集合，确保被推迟的域名仍然进入增强产物。
 6. Generate normal outputs and the isolated `output/enhanced/` set. / 生成正常产物及隔离的 `output/enhanced/` 增强产物。
 
-| Source / 来源 | Mode / 模式 | Payload identifier |
-| --- | --- | --- |
-| Khoindvn | Normal / 正常 | First DNS payload with a domain list or HTTPS endpoint / 首个包含域名列表或 HTTPS 端点的 DNS payload |
-| AppleJr | Normal / 正常 | First DNS payload with a domain list or HTTPS endpoint / 首个包含域名列表或 HTTPS 端点的 DNS payload |
-| Sideloading | Normal / 正常 | `novadev.nexdns.whileinstalling` |
-| Sideloading | Enhanced / 增强 | `novadev.nexdns.afterinstalling` |
+| Source / 来源 | Mode / 模式 | Payload identifier | Target domains |
+| --- | --- | --- | --- |
+| Khoindvn | Normal / 正常 | First DNS payload with a domain list or HTTPS endpoint / 首个包含域名列表或 HTTPS 端点的 DNS payload | Profile `SupplementalMatchDomains` |
+| AppleJr | Normal / 正常 | First DNS payload with a domain list or HTTPS endpoint / 首个包含域名列表或 HTTPS 端点的 DNS payload | Profile `SupplementalMatchDomains` |
+| Sideloading | Normal / 正常 | `novadev.nexrevokedns.whileinstalling` (fallback: `novadev.nexdns.whileinstalling`) | `denylist.txt` |
+| Sideloading | Enhanced / 增强 | `novadev.nexrevokedns.afterinstalling` (fallback: `novadev.nexdns.afterinstalling`) | `denylist-ppq.txt` |
 
 ### Exclusion rules | 排除规则
 
@@ -163,19 +162,24 @@ installation. Excluded entries fall into two groups:
 | Group | Behaviour | Examples |
 | --- | --- | --- |
 | Always excluded | Removed from **both** profiles | `appattest.apple.com` (suffix-matches the serving `register.` / `data.` hosts), `mesu`, `gdmf`, `guzzoni-*`, `comm-*.ess`, `axm-app` |
-| Deferred to enhanced | Removed from normal, kept in enhanced | `ppq.apple.com` + 4 PPQ CNAME variants, `vpp.itunes.apple.com` |
+| Deferred to enhanced | Removed from normal, kept in enhanced | `ppq.apple.com`, `ppq-ext.apple.com`, the four PPQ CNAME variants, `vpp.itunes.apple.com` |
+
+Both groups match **suffixes**, not exact strings, mirroring
+`SupplementalMatchDomains`. That is what keeps `register.appattest.apple.com`
+and `data.appattest.apple.com` out of both profiles even if an upstream lists
+them explicitly.
 
 Deferring rather than deleting matters: the enhanced rule files are generated
 from the enhanced "extra" set, so dropping a deferred domain outright would
 remove it from Quantumult X / Surge / Loon / Shadowrocket users' configs too.
 
-`PPQ_EDGE_DOMAINS` pins the four PPQ edge hosts (`ppq-ext.v.aaplimg.com`,
-`ppq-st-ext.itunes.apple.com`, `use1-ppq-ext-prod.apple.com`,
-`usw2-ppq-ext-prod.apple.com`) into the enhanced profile unconditionally. Apple's
-host table lists only `ppq.apple.com`, so these can never be found by probing the
-candidate pool — they are learnable only from an upstream profile's explicit
-list. Pinning them means a partial PPQ block cannot happen if every upstream
-stops publishing them.
+`PPQ_EDGE_DOMAINS` pins the five PPQ edge hosts (`ppq-ext.apple.com`,
+`ppq-ext.v.aaplimg.com`, `ppq-st-ext.itunes.apple.com`,
+`use1-ppq-ext-prod.apple.com`, `usw2-ppq-ext-prod.apple.com`) into the enhanced
+profile unconditionally. Apple's host table lists only `ppq.apple.com`, so these
+can never be found by probing the candidate pool — they are learnable only from
+an upstream profile's explicit list. Pinning them means a partial PPQ block
+cannot happen if every upstream stops publishing them.
 
 To adjust the behaviour, edit `ALWAYS_EXCLUDED_DOMAINS`,
 `INSTALL_TIME_EXCLUDED_DOMAINS` and `PPQ_EDGE_DOMAINS` in `main.py`.
@@ -249,7 +253,7 @@ download.
 - [Apple Support](https://support.apple.com/zh-cn/101555)
 - [Khoindvn](https://khoindvn.io.vn/)
 - [AppleJr](https://applejr.net/)
-- [Sideloading / NexDNS](https://sideloading.net/dns/)
+- [Sideloading / NexRevokeDNS](https://sideloading.net/dns/)
 - Upstream: [RzMY/IOS-AntiRevoke-DNS-Rules](https://github.com/RzMY/IOS-AntiRevoke-DNS-Rules)
 
 ## License | 许可证

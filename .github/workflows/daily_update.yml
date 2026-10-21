@@ -2,7 +2,10 @@ name: Daily iOS Anti-Revoke Update
 
 on:
   schedule:
-    - cron: '0 0 * * *'
+    # GitHub documents the start of every hour as a high-load window and warns
+    # that queued schedule jobs may be dropped. The old '0 0 * * *' sat exactly
+    # on that boundary; '17 0 * * *' keeps the same daily cadence without it.
+    - cron: '17 0 * * *'
   workflow_dispatch:
     inputs:
       debug:

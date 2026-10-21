@@ -64,6 +64,7 @@ ALWAYS_EXCLUDED_DOMAINS = frozenset({
 # revocation happens, so it belongs in the same install-time-excluded group.
 INSTALL_TIME_EXCLUDED_DOMAINS = frozenset({
     "ppq.apple.com",
+    "ppq-ext.apple.com",
     "ppq-ext.v.aaplimg.com",
     "ppq-st-ext.itunes.apple.com",
     "use1-ppq-ext-prod.apple.com",
@@ -78,11 +79,31 @@ INSTALL_TIME_EXCLUDED_DOMAINS = frozenset({
 # a candidate-pool-only pipeline silently loses them, and a partial PPQ block
 # leaves a fallback path open.
 PPQ_EDGE_DOMAINS = frozenset({
+    "ppq-ext.apple.com",
     "ppq-ext.v.aaplimg.com",
     "ppq-st-ext.itunes.apple.com",
     "use1-ppq-ext-prod.apple.com",
     "usw2-ppq-ext-prod.apple.com",
 })
+
+# Domains owned by the upstream providers themselves. They exist so the
+# provider's own service stays reachable (connectivity checks, download panels,
+# local test hosts); none of them is a certificate-revocation endpoint. Blocking
+# them adds nothing to anti-revoke coverage and published lists were carrying
+# three of them (applejr.net, khoindvn.com, vuvankhoi.com) purely because the
+# source profiles listed them. Upstream reached the same conclusion on
+# 2026-10-20 and now strips them too.
+PROVIDER_ONLY_DOMAIN_SUFFIXES = (
+    "applejr.net",
+    "backloop.dev",
+    "ipadownloads.com",
+    "khoindvn.com",
+    "khoindvn.io.vn",
+    "localhost.direct",
+    "novadev.vip",
+    "sideloading.net",
+    "vuvankhoi.com",
+)
 
 PROFILE_SOURCES = [
     {
@@ -99,8 +120,26 @@ PROFILE_SOURCES = [
         "url": "https://sideloading.net/dns/",
         "xpath": "/html/body/main/div/section[1]/div[1]/a[1]",
         "name": "sideloading",
-        "preferred_payload_identifier": "novadev.nexdns.whileinstalling",
-        "enhanced_payload_identifier": "novadev.nexdns.afterinstalling",
+        # 2026-10-20: Sideloading renamed its DNS payloads from
+        # novadev.nexdns.* to novadev.nexrevokedns.*. Keep the old namespace as
+        # a fallback so a rollback on their side does not break the run.
+        "preferred_payload_identifiers": [
+            "novadev.nexrevokedns.whileinstalling",
+            "novadev.nexdns.whileinstalling",
+        ],
+        "enhanced_payload_identifiers": [
+            "novadev.nexrevokedns.afterinstalling",
+            "novadev.nexdns.afterinstalling",
+        ],
+        # Both new payloads carry the same broad SupplementalMatchDomains set.
+        # That set is a routing scope: it includes Apple's app-attestation hosts,
+        # provider connectivity checks and localhost helpers, so it must NOT be
+        # published as the block list. The mode-specific deny lists are the
+        # actual target sets.
+        "domain_list_url": "https://sideloading.net/dns/denylist.txt",
+        "enhanced_domain_list_url": (
+            "https://sideloading.net/dns/denylist-ppq.txt"
+        ),
     },
 ]
 
@@ -109,6 +148,29 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+
+def _normalize_domain(domain: str) -> str:
+    """Lower-case a domain and strip a leading wildcard and trailing dot."""
+    normalized = domain.strip().lower().rstrip(".")
+    if normalized.startswith("*."):
+        normalized = normalized[2:]
+    return normalized
+
+
+def _matches_suffix(domain: str, suffixes) -> bool:
+    """Return whether ``domain`` equals one of ``suffixes`` or is its child.
+
+    ``SupplementalMatchDomains`` matches suffixes, so an exclusion has to use
+    the same semantics. Exact matching let ``register.appattest.apple.com``
+    slip past the ``appattest.apple.com`` exclusion -- the trap that broke app
+    installation for months.
+    """
+    normalized = _normalize_domain(domain)
+    return any(
+        normalized == suffix or normalized.endswith(f".{suffix}")
+        for suffix in suffixes
+    )
 
 
 class AntiRevokeOrchestrator:
@@ -151,23 +213,105 @@ class AntiRevokeOrchestrator:
         self.source_details: Dict[str, Dict[str, object]] = {}
 
     @staticmethod
+    def _payload_identifiers(
+        source: Dict[str, str],
+        mode: str,
+    ) -> Tuple[str, ...]:
+        """Return ordered payload selectors, accepting the legacy singular key.
+
+        ``preferred_payload_identifiers`` / ``enhanced_payload_identifiers``
+        carry an ordered fallback list: the current upstream namespace first,
+        then the previous one. The singular ``*_payload_identifier`` keys are
+        still honoured so existing configurations and tests keep working.
+        """
+        identifiers = source.get(f"{mode}_payload_identifiers")
+        if isinstance(identifiers, str):
+            return (identifiers,)
+        if isinstance(identifiers, (list, tuple)):
+            return tuple(
+                identifier
+                for identifier in identifiers
+                if isinstance(identifier, str) and identifier
+            )
+
+        identifier = source.get(f"{mode}_payload_identifier")
+        return (identifier,) if identifier else ()
+
+    @staticmethod
+    def _is_provider_domain(domain: str) -> bool:
+        """Return whether a domain belongs to an upstream provider's own infrastructure."""
+        return _matches_suffix(domain, PROVIDER_ONLY_DOMAIN_SUFFIXES)
+
+    @staticmethod
+    def _filter_provider_endpoint(endpoint: DnsEndpoint) -> DnsEndpoint:
+        """Remove provider infrastructure from an explicit endpoint list."""
+        domains = tuple(
+            domain
+            for domain in endpoint.domains
+            if not AntiRevokeOrchestrator._is_provider_domain(domain)
+        )
+        return replace(endpoint, domains=domains)
+
+    @staticmethod
+    def _filter_provider_domains(
+        report: DomainDiscoveryReport,
+    ) -> Tuple[DomainDiscoveryReport, Tuple[str, ...]]:
+        """Remove provider infrastructure from a discovery report.
+
+        Endpoint lists are already filtered, but probing can in principle learn
+        a provider host from a candidate pool. Filter the report too so the
+        published artifacts and the metadata can never disagree.
+        """
+        removed = tuple(
+            domain
+            for domain in report.target_domains
+            if AntiRevokeOrchestrator._is_provider_domain(domain)
+        )
+        if not removed:
+            return report, ()
+
+        removed_set = set(removed)
+        return replace(
+            report,
+            target_domains=tuple(
+                domain
+                for domain in report.target_domains
+                if domain not in removed_set
+            ),
+            blocked_by={
+                domain: sources
+                for domain, sources in report.blocked_by.items()
+                if domain not in removed_set
+            },
+            inconclusive_domains=tuple(
+                domain
+                for domain in report.inconclusive_domains
+                if domain not in removed_set
+            ),
+        ), removed
+
+    @staticmethod
     def _select_endpoint(
         source: Dict[str, str],
         endpoints: Sequence[DnsEndpoint],
+        mode: str = "preferred",
     ) -> DnsEndpoint:
         if not endpoints:
             raise RuntimeError(
                 f"Profile {source['name']} contains no valid HTTPS DNS endpoint or domain list"
             )
 
-        preferred_identifier = source.get("preferred_payload_identifier")
-        if preferred_identifier:
+        preferred_identifiers = AntiRevokeOrchestrator._payload_identifiers(
+            source, mode
+        )
+        for preferred_identifier in preferred_identifiers:
             for endpoint in endpoints:
                 if endpoint.payload_identifier == preferred_identifier:
                     return endpoint
+        if preferred_identifiers:
             raise RuntimeError(
-                f"Profile {source['name']} no longer contains preferred payload "
-                f"{preferred_identifier}"
+                f"Profile {source['name']} no longer contains any preferred payload: "
+                f"{', '.join(preferred_identifiers)}"
             )
 
         if len(endpoints) > 1:
@@ -190,27 +334,66 @@ class AntiRevokeOrchestrator:
         for source in sources:
             name = source["name"]
             profile = self.crypto.parse_profile_bytes(profiles[name])
-            discovered = self.crypto.extract_dns_endpoints(profile, name)
+            discovered = [
+                self._filter_provider_endpoint(item)
+                for item in self.crypto.extract_dns_endpoints(profile, name)
+            ]
             endpoint = self._select_endpoint(source, discovered)
+
+            # A source may publish a routing scope rather than a block list.
+            # When it also publishes a plain-text deny list, that list is the
+            # authoritative target set and replaces the profile's match domains.
+            upstream_domains = self.scraper.domain_lists.get(name)
+            if upstream_domains:
+                endpoint = replace(
+                    endpoint,
+                    domains=tuple(
+                        sorted(
+                            domain
+                            for domain in upstream_domains
+                            if not self._is_provider_domain(domain)
+                        )
+                    ),
+                )
             selected.append(endpoint)
-            enhanced_identifier = source.get("enhanced_payload_identifier")
-            if enhanced_identifier:
+
+            enhanced_identifiers = self._payload_identifiers(source, "enhanced")
+            if enhanced_identifiers:
                 enhanced_endpoint = self._select_endpoint(
                     {
                         "name": f"{name} enhanced",
-                        "preferred_payload_identifier": enhanced_identifier,
+                        "enhanced_payload_identifiers": list(enhanced_identifiers),
                     },
                     discovered,
+                    mode="enhanced",
                 )
+                enhanced_upstream_domains = (
+                    self.scraper.enhanced_domain_lists.get(name)
+                )
+                if enhanced_upstream_domains:
+                    enhanced_endpoint = replace(
+                        enhanced_endpoint,
+                        domains=tuple(
+                            sorted(
+                                domain
+                                for domain in enhanced_upstream_domains
+                                if not self._is_provider_domain(domain)
+                            )
+                        ),
+                    )
             self.source_details[name] = {
                 "page_url": source["url"],
                 "xpath": source["xpath"],
                 "download_url": self.scraper.download_urls[name],
+                "domain_list_url": source.get("domain_list_url"),
+                "enhanced_domain_list_url": source.get(
+                    "enhanced_domain_list_url"
+                ),
                 "profile_size": len(profiles[name]),
                 "discovered_endpoints": [asdict(item) for item in discovered],
                 "selected_endpoint": asdict(endpoint),
                 "enhanced_endpoint": (
-                    asdict(enhanced_endpoint) if enhanced_identifier else None
+                    asdict(enhanced_endpoint) if enhanced_identifiers else None
                 ),
             }
             logger.info(
@@ -410,12 +593,16 @@ class AntiRevokeOrchestrator:
         domains: Sequence[str],
         excluded: frozenset,
     ) -> Tuple[List[str], List[str]]:
-        """Split domains into (kept, excluded) using the given exclusion set."""
+        """Split domains into (kept, excluded) using suffix semantics.
+
+        ``SupplementalMatchDomains`` matches suffixes, so ``appattest.apple.com``
+        also covers ``register.appattest.apple.com``. Matching exclusions
+        exactly would let those serving hosts through.
+        """
         kept: List[str] = []
         dropped: List[str] = []
         for domain in domains:
-            normalized = domain.strip().lower().lstrip("*.")
-            if normalized in excluded:
+            if _matches_suffix(domain, excluded):
                 dropped.append(domain)
             else:
                 kept.append(domain)
@@ -440,7 +627,7 @@ class AntiRevokeOrchestrator:
 
         deferred = tuple(sorted(
             d for d in dropped
-            if d.strip().lower().lstrip("*.") in INSTALL_TIME_EXCLUDED_DOMAINS
+            if _matches_suffix(d, INSTALL_TIME_EXCLUDED_DOMAINS)
         ))
         always = [d for d in dropped if d not in deferred]
         if deferred:
@@ -509,6 +696,18 @@ class AntiRevokeOrchestrator:
             enhanced_report = self.probe.discover(
                 candidate_domains, [enhanced_endpoint]
             )
+            normal_report, removed_normal = self._filter_provider_domains(
+                normal_report
+            )
+            enhanced_report, removed_enhanced = self._filter_provider_domains(
+                enhanced_report
+            )
+            if removed_normal or removed_enhanced:
+                logger.info(
+                    "Removed provider-only domains: normal=%s enhanced=%s",
+                    list(removed_normal),
+                    list(removed_enhanced),
+                )
             self._validate_report("Normal", candidate_domains, normal_report,
                                   self.min_target_domains)
             # The floor is deliberately NOT applied to the enhanced endpoint.

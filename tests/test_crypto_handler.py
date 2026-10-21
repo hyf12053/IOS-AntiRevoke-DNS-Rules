@@ -172,9 +172,21 @@ def test_build_enhanced_domain_sets_separates_extra_and_merged_domains():
 def test_sideloading_payload_modes_are_explicit():
     source = next(item for item in PROFILE_SOURCES if item["name"] == "sideloading")
 
-    assert source["preferred_payload_identifier"] == (
-        "novadev.nexdns.whileinstalling"
+    # 2026-10-20: Sideloading renamed its payload namespace. The current one
+    # must come first, with the pre-rebrand namespace kept as a fallback.
+    assert source["preferred_payload_identifiers"] == [
+        "novadev.nexrevokedns.whileinstalling",
+        "novadev.nexdns.whileinstalling",
+    ]
+    assert source["enhanced_payload_identifiers"] == [
+        "novadev.nexrevokedns.afterinstalling",
+        "novadev.nexdns.afterinstalling",
+    ]
+    # The new profile's match-domain list is a routing scope that includes
+    # appattest and provider helper hosts; the deny lists are the block sets.
+    assert source["domain_list_url"] == (
+        "https://sideloading.net/dns/denylist.txt"
     )
-    assert source["enhanced_payload_identifier"] == (
-        "novadev.nexdns.afterinstalling"
+    assert source["enhanced_domain_list_url"] == (
+        "https://sideloading.net/dns/denylist-ppq.txt"
     )

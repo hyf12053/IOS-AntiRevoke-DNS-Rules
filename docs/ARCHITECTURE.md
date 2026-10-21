@@ -31,7 +31,9 @@ Apple official host tables
  - normal iOS profile           - iOS profile: normal + extra
 ```
 
-Selected DNS payloads with a non-empty domain list in `DNSSettings.SupplementalMatchDomains` contribute those domains directly to their normal or enhanced result set. Their URLs are not queried, even if present. Lists are normalized and deduplicated; domains outside Apple's candidate tables are retained. Empty, catch-all, and invalid entries are ignored. Domain names in web clips, server addresses, or on-demand connection exceptions are not treated as target lists.
+Selected DNS payloads with a non-empty domain list in `DNSSettings.SupplementalMatchDomains` contribute those domains directly to their normal or enhanced result set, unless the source configures `domain_list_url` or `enhanced_domain_list_url`. In that case the downloaded plain-text list replaces the profile match-domain list for that mode. This matters for Sideloading, whose current profile uses one broad `SupplementalMatchDomains` routing scope that includes allowlist and helper domains. Lists are normalized and deduplicated; domains outside Apple's candidate tables are retained. Empty, catch-all, and invalid entries are ignored. Domain names in web clips, server addresses, or on-demand connection exceptions are not treated as target lists.
+
+Provider-owned domains used only for upstream connectivity or status checks (for example `applejr.net`, `*.novadev.vip`, `khoindvn.com`, and `vuvankhoi.com`) are removed from discovery reports before validation and publication. The suffixes are defined in `PROVIDER_ONLY_DOMAIN_SUFFIXES` in `main.py`.
 
 Payloads without an explicit domain list use the probing flow above. All NXDOMAIN or empty answers are checked against a public reference DoH resolver. A probed domain is published only when the upstream answer differs from a valid public answer, or when the upstream returns a non-global address such as `0.0.0.0`.
 
@@ -39,14 +41,18 @@ Payloads without an explicit domain list use the probing flow above. All NXDOMAI
 
 The three mobileconfig files are downloaded and decoded on every run. Endpoint URLs are never hardcoded as runtime inputs; payload identifiers select the intended mode from the current profile.
 
-| Source | Role | Selection |
-| --- | --- | --- |
-| Khoindvn | Normal | First DNS payload with explicit domains or a valid HTTPS endpoint |
-| AppleJr | Normal | First DNS payload with explicit domains or a valid HTTPS endpoint |
-| Sideloading | Normal | `novadev.nexdns.whileinstalling` |
-| Sideloading | Enhanced | `novadev.nexdns.afterinstalling` |
+| Source | Role | Selection | Target domains |
+| --- | --- | --- | --- |
+| Khoindvn | Normal | First DNS payload with explicit domains or a valid HTTPS endpoint | Profile `SupplementalMatchDomains` |
+| AppleJr | Normal | First DNS payload with explicit domains or a valid HTTPS endpoint | Profile `SupplementalMatchDomains` |
+| Sideloading | Normal | `novadev.nexrevokedns.whileinstalling`, then legacy `novadev.nexdns.whileinstalling` | `denylist.txt` |
+| Sideloading | Enhanced | `novadev.nexrevokedns.afterinstalling`, then legacy `novadev.nexdns.afterinstalling` | `denylist-ppq.txt` |
 
 The enhanced endpoint is intentionally excluded from the normal endpoint union. Its contribution is calculated independently so proxy users can toggle the enhanced rule set without duplicating normal rules.
+
+### Sideloading NexRevokeDNS migration (2026-10-20)
+
+Sideloading renamed its DNS payloads from `novadev.nexdns.*` to `novadev.nexrevokedns.*` and switched both payloads to the same broad `SupplementalMatchDomains` routing scope (it now includes `appattest.apple.com`, `register.appattest.apple.com`, provider checks and `localhost` helpers). That scope must not be published as a block list, so the source downloads `denylist.txt` for normal mode and `denylist-ppq.txt` for enhanced mode. Identifier selection accepts an ordered list: the current namespace wins, with the legacy namespace kept as a rollback-compatible fallback.
 
 ## Components
 
@@ -55,7 +61,8 @@ The enhanced endpoint is intentionally excluded from the normal endpoint union. 
 - Downloads Apple host data and all required source profiles.
 - Extracts domains only from recognized `Host` or `主机` tables.
 - Resolves page XPaths to the current mobileconfig download URLs.
-- Fails when a required page, link, or profile cannot be retrieved.
+- Downloads optional plain-text domain lists for sources whose profile match domains are only a routing scope.
+- Fails when a required page, link, profile, or configured domain list cannot be retrieved.
 
 `utils/crypto_handler.py`
 
