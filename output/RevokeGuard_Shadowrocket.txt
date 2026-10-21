@@ -1,11 +1,10 @@
 # Project: iOS-AntiRevoke-DNS-Rules
 # Author: RzMY
-# Updated: 2026-10-18 04:13:04 UTC
-# Domain Count: 29
+# Updated: 2026-10-21 21:39:46 UTC
+# Domain Count: 26
 # License: MIT License
 # Format: DOMAIN,domain,action
 
-DOMAIN,applejr.net,REJECT
 DOMAIN,certs.apple.com,REJECT
 DOMAIN,certs.apple.com.edgekey.net,REJECT
 DOMAIN,certs.g.aaplimg.com,REJECT
@@ -16,7 +15,6 @@ DOMAIN,crl.entrust.net,REJECT
 DOMAIN,crl.g.aaplimg.com,REJECT
 DOMAIN,crl3.digicert.com,REJECT
 DOMAIN,crl4.digicert.com,REJECT
-DOMAIN,khoindvn.com,REJECT
 DOMAIN,ocsp-a.g.aaplimg.com,REJECT
 DOMAIN,ocsp-lb.apple.com.akadns.net,REJECT
 DOMAIN,ocsp.apple.com,REJECT
@@ -33,4 +31,3 @@ DOMAIN,valid-apple.g.aaplimg.com,REJECT
 DOMAIN,valid.apple.com,REJECT
 DOMAIN,valid.apple.com.akadns.net,REJECT
 DOMAIN,valid.apple.com.edgekey.net,REJECT
-DOMAIN,vuvankhoi.com,REJECT

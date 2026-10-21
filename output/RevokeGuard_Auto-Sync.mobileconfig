@@ -18,7 +18,6 @@
 				<string>https://reject.rzmy.dpdns.org/dns-query</string>
 				<key>SupplementalMatchDomains</key>
 				<array>
-					<string>applejr.net</string>
 					<string>certs.apple.com</string>
 					<string>certs.apple.com.edgekey.net</string>
 					<string>certs.g.aaplimg.com</string>
@@ -29,7 +28,6 @@
 					<string>crl.g.aaplimg.com</string>
 					<string>crl3.digicert.com</string>
 					<string>crl4.digicert.com</string>
-					<string>khoindvn.com</string>
 					<string>ocsp-a.g.aaplimg.com</string>
 					<string>ocsp-lb.apple.com.akadns.net</string>
 					<string>ocsp.apple.com</string>
@@ -46,7 +44,6 @@
 					<string>valid.apple.com</string>
 					<string>valid.apple.com.akadns.net</string>
 					<string>valid.apple.com.edgekey.net</string>
-					<string>vuvankhoi.com</string>
 				</array>
 			</dict>
 			<key>PayloadDisplayName</key>
@@ -62,9 +59,9 @@
 		</dict>
 	</array>
 	<key>PayloadDescription</key>
-	<string>Auto-generated on 2026-10-18 04:13:04 UTC. Blocked Domains: 29. Backend: reject.rzmy.dpdns.org.</string>
+	<string>Auto-generated on 2026-10-21 21:39:46 UTC. Blocked Domains: 26. Backend: reject.rzmy.dpdns.org.</string>
 	<key>PayloadDisplayName</key>
-	<string>RevokeGuard 2026-10-18</string>
+	<string>RevokeGuard 2026-10-21</string>
 	<key>PayloadIdentifier</key>
 	<string>com.revokeGuard.03d52fed-8538-530e-818f-8b430779ad8a</string>
 	<key>PayloadOrganization</key>

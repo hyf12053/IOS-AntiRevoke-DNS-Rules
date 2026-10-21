@@ -1,9 +1,10 @@
 # Project: iOS-AntiRevoke-DNS-Rules
 # Author: RzMY
-# Updated: 2026-10-18 04:13:04 UTC
-# Domain Count: 6
+# Updated: 2026-10-21 21:39:46 UTC
+# Domain Count: 7
 # License: MIT License
 
+ppq-ext.apple.com
 ppq-ext.v.aaplimg.com
 ppq-st-ext.itunes.apple.com
 ppq.apple.com
