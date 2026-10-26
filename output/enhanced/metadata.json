@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
-  "timestamp": "2026-10-22T04:41:46.130116Z",
+  "timestamp": "2026-10-26T15:21:27.498947Z",
   "dns_endpoint": {
     "source": "sideloading",
     "url": "https://dns.sideloading.net/ppq/dns-query",
-    "payload_identifier": "novadev.nexrevokedns.afterinstalling",
-    "display_name": "NexRevokeDNS - Use after installing apps",
+    "payload_identifier": "nexsideloading.nexrevokedns.afterinstall",
+    "display_name": "Use after installing - NexRevokeDNS",
     "domains": [
       "appattest.apple.com",
       "certs.apple.com",
