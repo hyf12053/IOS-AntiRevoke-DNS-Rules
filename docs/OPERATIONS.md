@@ -72,7 +72,9 @@ At least one upstream endpoint or the local network failed after retries. Rerun 
 
 `no longer contains any preferred payload`
 
-The Sideloading profile changed payload identifiers again. Inspect all `discovered_endpoints` and add the current `whileinstalling` / `afterinstalling` identifiers to the front of the ordered lists in `PROFILE_SOURCES`, keeping the old ones as fallbacks.
+The Sideloading profile changed payload identifiers again. Inspect all `discovered_endpoints` in the run log (the error message now prints the identifiers that *are* present) and add the current ones to the front of the ordered lists in `PROFILE_SOURCES`, keeping the old ones as fallbacks. If only the namespace prefix changed, the `preferred_payload_markers` / `enhanced_payload_markers` fallback already selected the right payload and the run only logged a warning — update the exact identifier anyway so the warning stops firing and a future suffix rename is still caught.
+
+As of 2026-10-26 the current identifiers are `nexsideloading.nexrevokedns.duringinstall` (normal) and `nexsideloading.nexrevokedns.afterinstall` (enhanced); both previous `novadev.nexrevokedns.*` and `novadev.nexdns.*` names remain as ordered fallbacks.
 
 `Failed to sign the iOS configuration profile`
 

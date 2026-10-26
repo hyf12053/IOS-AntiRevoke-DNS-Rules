@@ -120,17 +120,28 @@ PROFILE_SOURCES = [
         "url": "https://sideloading.net/dns/",
         "xpath": "/html/body/main/div/section[1]/div[1]/a[1]",
         "name": "sideloading",
-        # 2026-10-20: Sideloading renamed its DNS payloads from
-        # novadev.nexdns.* to novadev.nexrevokedns.*. Keep the old namespace as
-        # a fallback so a rollback on their side does not break the run.
+        # Sideloading renames this namespace often. History:
+        #   novadev.nexdns.*            (until 2026-10-20)
+        #   novadev.nexrevokedns.*      (2026-10-20 .. 2026-10-25)
+        #   nexsideloading.nexrevokedns.*  (2026-10-25, current)
+        # Exact identifiers are tried in order (newest first) so a rollback on
+        # their side does not break the run. The marker lists below are the
+        # second line of defence: they match on the mode suffix alone, so the
+        # *next* rename of the namespace prefix degrades to a warning instead of
+        # a failed daily build. That matters because this exact rename has now
+        # broken the pipeline twice in six days (2026-10-20, 2026-10-25).
         "preferred_payload_identifiers": [
+            "nexsideloading.nexrevokedns.duringinstall",
             "novadev.nexrevokedns.whileinstalling",
             "novadev.nexdns.whileinstalling",
         ],
         "enhanced_payload_identifiers": [
+            "nexsideloading.nexrevokedns.afterinstall",
             "novadev.nexrevokedns.afterinstalling",
             "novadev.nexdns.afterinstalling",
         ],
+        "preferred_payload_markers": ["duringinstall", "whileinstalling"],
+        "enhanced_payload_markers": ["afterinstall", "afterinstalling"],
         # Both new payloads carry the same broad SupplementalMatchDomains set.
         # That set is a routing scope: it includes Apple's app-attestation hosts,
         # provider connectivity checks and localhost helpers, so it must NOT be
@@ -238,6 +249,31 @@ class AntiRevokeOrchestrator:
         return (identifier,) if identifier else ()
 
     @staticmethod
+    def _payload_markers(
+        source: Dict[str, str],
+        mode: str,
+    ) -> Tuple[str, ...]:
+        """Return ordered suffix markers used as a last-resort payload selector.
+
+        Upstream providers rename the payload *namespace* (the part before the
+        last dot) far more often than they change what a payload is for. Pinning
+        only full identifiers means every rename is a hard failure; matching on
+        the mode suffix (``duringinstall`` / ``afterinstall``) keeps the run
+        alive and only logs a warning, so a rename cannot silently stop the
+        daily build for days before anyone notices.
+        """
+        markers = source.get(f"{mode}_payload_markers")
+        if isinstance(markers, str):
+            return (markers,)
+        if isinstance(markers, (list, tuple)):
+            return tuple(
+                marker
+                for marker in markers
+                if isinstance(marker, str) and marker
+            )
+        return ()
+
+    @staticmethod
     def _is_provider_domain(domain: str) -> bool:
         """Return whether a domain belongs to an upstream provider's own infrastructure."""
         return _matches_suffix(domain, PROVIDER_ONLY_DOMAIN_SUFFIXES)
@@ -308,10 +344,30 @@ class AntiRevokeOrchestrator:
             for endpoint in endpoints:
                 if endpoint.payload_identifier == preferred_identifier:
                     return endpoint
+
+        # The namespace prefix is what upstream keeps renaming; the mode suffix
+        # is stable. Match on it before giving up so a rename degrades to a
+        # warning instead of a failed run.
+        markers = AntiRevokeOrchestrator._payload_markers(source, mode)
+        for marker in markers:
+            for endpoint in endpoints:
+                if endpoint.payload_identifier.endswith(f".{marker}"):
+                    logger.warning(
+                        "Profile %s payload %s matched the %r marker instead of "
+                        "an exact identifier; upstream renamed the namespace "
+                        "again. Pinned identifiers: %s",
+                        source["name"],
+                        endpoint.payload_identifier,
+                        marker,
+                        ", ".join(preferred_identifiers) or "(none)",
+                    )
+                    return endpoint
+
         if preferred_identifiers:
             raise RuntimeError(
                 f"Profile {source['name']} no longer contains any preferred payload: "
-                f"{', '.join(preferred_identifiers)}"
+                f"{', '.join(preferred_identifiers)} (available: "
+                f"{', '.join(e.payload_identifier for e in endpoints)})"
             )
 
         if len(endpoints) > 1:
@@ -358,11 +414,13 @@ class AntiRevokeOrchestrator:
             selected.append(endpoint)
 
             enhanced_identifiers = self._payload_identifiers(source, "enhanced")
-            if enhanced_identifiers:
+            enhanced_markers = self._payload_markers(source, "enhanced")
+            if enhanced_identifiers or enhanced_markers:
                 enhanced_endpoint = self._select_endpoint(
                     {
                         "name": f"{name} enhanced",
                         "enhanced_payload_identifiers": list(enhanced_identifiers),
+                        "enhanced_payload_markers": list(enhanced_markers),
                     },
                     discovered,
                     mode="enhanced",
@@ -393,7 +451,9 @@ class AntiRevokeOrchestrator:
                 "discovered_endpoints": [asdict(item) for item in discovered],
                 "selected_endpoint": asdict(endpoint),
                 "enhanced_endpoint": (
-                    asdict(enhanced_endpoint) if enhanced_identifiers else None
+                    asdict(enhanced_endpoint)
+                    if (enhanced_identifiers or enhanced_markers)
+                    else None
                 ),
             }
             logger.info(

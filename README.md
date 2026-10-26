@@ -151,8 +151,14 @@ The daily workflow performs the following operations:
 | --- | --- | --- | --- |
 | Khoindvn | Normal / 正常 | First DNS payload with a domain list or HTTPS endpoint / 首个包含域名列表或 HTTPS 端点的 DNS payload | Profile `SupplementalMatchDomains` |
 | AppleJr | Normal / 正常 | First DNS payload with a domain list or HTTPS endpoint / 首个包含域名列表或 HTTPS 端点的 DNS payload | Profile `SupplementalMatchDomains` |
-| Sideloading | Normal / 正常 | `novadev.nexrevokedns.whileinstalling` (fallback: `novadev.nexdns.whileinstalling`) | `denylist.txt` |
-| Sideloading | Enhanced / 增强 | `novadev.nexrevokedns.afterinstalling` (fallback: `novadev.nexdns.afterinstalling`) | `denylist-ppq.txt` |
+| Sideloading | Normal / 正常 | `nexsideloading.nexrevokedns.duringinstall` (fallbacks: `novadev.nexrevokedns.whileinstalling`, `novadev.nexdns.whileinstalling`; last resort: any `*.duringinstall` / `*.whileinstalling` payload) | `denylist.txt` |
+| Sideloading | Enhanced / 增强 | `nexsideloading.nexrevokedns.afterinstall` (fallbacks: `novadev.nexrevokedns.afterinstalling`, `novadev.nexdns.afterinstalling`; last resort: any `*.afterinstall` / `*.afterinstalling` payload) | `denylist-ppq.txt` |
+
+> Sideloading renames its payload namespace every few days (twice in the six days
+> before 2026-10-26). Exact identifiers are tried newest-first; if none matches,
+> `preferred_payload_markers` / `enhanced_payload_markers` select by the mode
+> suffix and log a warning instead of failing the build. See §36 of the project
+> guide in the parent workspace.
 
 ### Exclusion rules | 排除规则
 

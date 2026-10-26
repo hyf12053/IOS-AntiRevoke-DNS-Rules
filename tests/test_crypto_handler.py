@@ -172,15 +172,29 @@ def test_build_enhanced_domain_sets_separates_extra_and_merged_domains():
 def test_sideloading_payload_modes_are_explicit():
     source = next(item for item in PROFILE_SOURCES if item["name"] == "sideloading")
 
-    # 2026-10-20: Sideloading renamed its payload namespace. The current one
-    # must come first, with the pre-rebrand namespace kept as a fallback.
+    # Sideloading has renamed this namespace twice: novadev.nexdns.* ->
+    # novadev.nexrevokedns.* (2026-10-20) -> nexsideloading.nexrevokedns.*
+    # (2026-10-25). The current identifiers must come first, with every older
+    # namespace kept as a fallback so an upstream rollback still works.
     assert source["preferred_payload_identifiers"] == [
+        "nexsideloading.nexrevokedns.duringinstall",
         "novadev.nexrevokedns.whileinstalling",
         "novadev.nexdns.whileinstalling",
     ]
     assert source["enhanced_payload_identifiers"] == [
+        "nexsideloading.nexrevokedns.afterinstall",
         "novadev.nexrevokedns.afterinstalling",
         "novadev.nexdns.afterinstalling",
+    ]
+    # Suffix markers are the rename-proof fallback; they must not be able to
+    # select the wrong mode (duringinstall vs afterinstall).
+    assert source["preferred_payload_markers"] == [
+        "duringinstall",
+        "whileinstalling",
+    ]
+    assert source["enhanced_payload_markers"] == [
+        "afterinstall",
+        "afterinstalling",
     ]
     # The new profile's match-domain list is a routing scope that includes
     # appattest and provider helper hosts; the deny lists are the block sets.

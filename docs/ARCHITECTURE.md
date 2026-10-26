@@ -45,14 +45,18 @@ The three mobileconfig files are downloaded and decoded on every run. Endpoint U
 | --- | --- | --- | --- |
 | Khoindvn | Normal | First DNS payload with explicit domains or a valid HTTPS endpoint | Profile `SupplementalMatchDomains` |
 | AppleJr | Normal | First DNS payload with explicit domains or a valid HTTPS endpoint | Profile `SupplementalMatchDomains` |
-| Sideloading | Normal | `novadev.nexrevokedns.whileinstalling`, then legacy `novadev.nexdns.whileinstalling` | `denylist.txt` |
-| Sideloading | Enhanced | `novadev.nexrevokedns.afterinstalling`, then legacy `novadev.nexdns.afterinstalling` | `denylist-ppq.txt` |
+| Sideloading | Normal | `nexsideloading.nexrevokedns.duringinstall`, then `novadev.nexrevokedns.whileinstalling`, then `novadev.nexdns.whileinstalling`; suffix markers `duringinstall` / `whileinstalling` as a last resort | `denylist.txt` |
+| Sideloading | Enhanced | `nexsideloading.nexrevokedns.afterinstall`, then `novadev.nexrevokedns.afterinstalling`, then `novadev.nexdns.afterinstalling`; suffix markers `afterinstall` / `afterinstalling` as a last resort | `denylist-ppq.txt` |
 
 The enhanced endpoint is intentionally excluded from the normal endpoint union. Its contribution is calculated independently so proxy users can toggle the enhanced rule set without duplicating normal rules.
 
 ### Sideloading NexRevokeDNS migration (2026-10-20)
 
 Sideloading renamed its DNS payloads from `novadev.nexdns.*` to `novadev.nexrevokedns.*` and switched both payloads to the same broad `SupplementalMatchDomains` routing scope (it now includes `appattest.apple.com`, `register.appattest.apple.com`, provider checks and `localhost` helpers). That scope must not be published as a block list, so the source downloads `denylist.txt` for normal mode and `denylist-ppq.txt` for enhanced mode. Identifier selection accepts an ordered list: the current namespace wins, with the legacy namespace kept as a rollback-compatible fallback.
+
+### Sideloading NexSideloading payload migration (2026-10-25)
+
+The same CMS-signed `nexrevokedns.mobileconfig` now identifies its normal payload as `nexsideloading.nexrevokedns.duringinstall` and its enhanced payload as `nexsideloading.nexrevokedns.afterinstall`. Both the namespace prefix and the mode suffix changed; the page link (`/dns/nexrevokedns.mobileconfig`), the DoH URLs (`dns.sideloading.net/dns-query`, `/ppq/dns-query`) and the published deny lists are unchanged. This is the second rename in six days (2026-10-20 was the first), which is why the fork no longer relies on exact identifiers alone: `*_payload_markers` match the mode suffix and only warn when the namespace changes again. The mode-specific deny lists still override the profile's routing scope, and the normal payload's `vpp.itunes.apple.com` is still deferred to the enhanced profile.
 
 ## Components
 
