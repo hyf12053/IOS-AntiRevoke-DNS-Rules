@@ -88,6 +88,30 @@ def test_marker_never_swaps_the_modes():
         AntiRevokeOrchestrator._select_endpoint(SOURCE, found, mode="enhanced")
 
 
+def test_marker_matches_a_component_not_a_prefix_of_one():
+    """``duringinstall`` must not match ``duringinstallment``.
+
+    The marker is compared against whole dot-separated components, so a future
+    upstream that appends a version component (``…duringinstall.v2``) still
+    matches, while a look-alike word does not.
+    """
+    found = endpoints([
+        payload("brand.nexrevokedns.duringinstall.v2",
+                "https://dns.example/dns-query"),
+    ])
+
+    assert AntiRevokeOrchestrator._select_endpoint(
+        SOURCE, found
+    ).payload_identifier == "brand.nexrevokedns.duringinstall.v2"
+
+    look_alike = endpoints([
+        payload("brand.nexrevokedns.duringinstallment",
+                "https://dns.example/dns-query"),
+    ])
+    with pytest.raises(RuntimeError, match="no longer contains any preferred payload"):
+        AntiRevokeOrchestrator._select_endpoint(SOURCE, look_alike)
+
+
 def test_error_message_lists_what_the_profile_actually_contains():
     """A failed run must be diagnosable from the log alone."""
     found = endpoints([

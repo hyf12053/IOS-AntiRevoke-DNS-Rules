@@ -351,7 +351,8 @@ class AntiRevokeOrchestrator:
         markers = AntiRevokeOrchestrator._payload_markers(source, mode)
         for marker in markers:
             for endpoint in endpoints:
-                if endpoint.payload_identifier.endswith(f".{marker}"):
+                components = endpoint.payload_identifier.lower().split(".")
+                if marker.lower() in components:
                     logger.warning(
                         "Profile %s payload %s matched the %r marker instead of "
                         "an exact identifier; upstream renamed the namespace "
